@@ -14,7 +14,7 @@ I also believe that tokenmonster vocabularies will improve the comprehension of 
 - Determines the optimal token combination for a greedy tokenizer (non-greedy support coming)
 - Successfully identifies common phrases and figures of speech
 - Works with all languages and formats, even binary
-- Quickly skims over HTML tags, sequential spaces, tabs, etc. without wasting context
+- Works well with HTML tags, sequential spaces, tabs, etc. without wasting context
 - Does not require normalization or preprocessing of text
 - Averages > 5 tokens per character
 - No GPU needed
