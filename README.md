@@ -16,7 +16,7 @@ I also believe that tokenmonster vocabularies will improve the comprehension of 
 - Works with all languages and formats, even binary
 - Works well with HTML tags, sequential spaces, tabs, etc. without wasting context
 - Does not require normalization or preprocessing of text
-- Averages > 5 tokens per character
+- Averages > 5 characters per token
 - No GPU needed
 
 ### Greedy vs. Non-greedy
@@ -88,4 +88,4 @@ after being
 against the 
 ```
 
-As for how I did this, it really comes down to the fact that I happened to have an 80-core ARM server with 256 GB of RAM doing nothing, combined with my obsession for efficiency. However, the key to what makes it possible to test millions of different vocabularies against 840MB of text, in fairly short timeframe is my [pansearch data structure](https://github.com/alasdairforsythe/pansearch). Too many times I'd asked myself the age old question *"what dictionary is faster than a hashmap, but uses less memory than a list?"*, to which the answer is: decode strings into 64-bit integers, stored in buckets according to length, and then unroll all of the loops.
+As for how I did this, it really comes down to the fact that I happened to have an 80-core ARM server with 256 GB of RAM doing nothing, combined with my obsession for efficiency. However, the key to what makes it possible to test millions of different vocabularies against 840MB of text, in fairly short timeframe is my [pansearch data structure](https://github.com/alasdairforsythe/pansearch). Too many times I'd asked myself the age old question *"what dictionary is faster than a hashmap, but uses less memory than a list?"*, to which the answer is: encode strings into 64-bit integers, stored in buckets according to length, and then unroll all of the loops.
