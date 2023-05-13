@@ -5,7 +5,7 @@ Given a text dataset, a vocabulary-size and a maximum-token-length, tokenmonster
 
 [Test tokenmonster in your browser here.](https://bot.co/tokenmonster.html)
 
-tokenmonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models by choosing better tokens. By selecting more optimal tokens, text can be represented with 20-30% less tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 20-30%.
+tokenmonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models by choosing better tokens. By selecting more optimal tokens, text can be represented with 20-30% less tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 20-30%. The code-optimized tokenizers do even better, [see it for yourself](https://bot.co/tokenmonster.html).
 
 I also believe that tokenmonster vocabularies will improve the comprehension of Large Language Models. For more details see [How and Why](#how-and-why).
 
