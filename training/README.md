@@ -12,7 +12,7 @@ go build trainvocab.go
 go build exporttokens.go
 ```
 
-First run ./getalltokens on your training data. The default settings require around 100GB of RAM. If you don't have that you'll need to reduce `-chunk-size` to something much lower, like 10,000,000 bytes or even 1,000,000. However, you then need to consider the effect of -min-occur-chunk, perhaps reduce it to 2. YOu can probably increase `-min-occur` to something much higher without losing any quality, I kept it low just in case.
+First run ./getalltokens on your training data. The default settings require around 100GB of RAM. If you don't have that you'll need to reduce `-chunk-size` to something much lower, like 10,000,000 bytes or even 1,000,000. However, you then need to consider the effect of -min-occur-chunk, perhaps reduce it to 2. You can probably increase `-min-occur` to something much higher without losing any quality, I kept it low just in case.
 ```
 Usage of ./getalltokens:
   -chunk-size int
