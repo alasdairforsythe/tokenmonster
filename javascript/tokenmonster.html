@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>TokenMonster Example</title>
+  <style>
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f1f1f1;
+}
+
+#container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px;
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+
+h1 {
+  text-align: center;
+  font-size: 24px;
+  margin-bottom: 20px;
+}
+
+.m {
+  text-decoration:none;
+  color:black;
+  font-size:10pt;
+}
+
+#inputText {
+  width: 100%;
+  height: 180px;
+  padding: 12px;
+  box-sizing: border-box;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  resize: vertical;
+  background-color: #f9f9f9;
+}
+
+#output {
+  width: 100%;
+  padding: 12px;
+  margin-top: 16px;
+  background-color: #f9f9f9;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+#mbnote {
+  visibility: hidden;
+  margin-top: 16px;
+  font-style: italic;
+  color: #777;
+}
+
+.token {
+  display: inline-block;
+  padding: 0;
+  margin: 0;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.token-0 {
+  background-color: #90caf9;
+}
+.token-1 {
+  background-color: #ffe082;
+}
+.token-2 {
+  background-color: #a5d6a7;
+}
+.token-3 {
+  background-color: #f48fb1;
+}
+
+
+/* Improve the CSS for the dropdown boxes */
+.select-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 16px;
+  width:280px;
+}
+
+.select-wrapper select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: transparent;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 16px;
+  width: 100%;
+  cursor: pointer;
+}
+
+.select-wrapper::after {
+  content: '\25BC';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* Apply the improved CSS classes to the dropdown boxes */
+
+.output-container {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .output-box {
+      width: 48%;
+    }
+
+    .token-count {
+      margin-top: 16px;
+    }
+  </style>
+  <script src="tokenmonster.js"></script> <!-- tokenmonster Encoder -->
+  <script src="Encoder.js"></script> <!-- GPT Encoder -->
+  <script>
+
+  function hasMultibyteCharacters(str) {
+    for (let i = 0; i < str.length; i++) {
+      if (str.charCodeAt(i) > 127) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+    // Load token data from the URL
+    async function loadTokenData(tokenDataUrl) {
+      const tokenMonster = new TokenMonster();
+      try {
+        // Load token data from the URL
+        await tokenMonster.load(tokenDataUrl);
+        return tokenMonster;
+      } catch (error) {
+        console.error('Error loading token data:', error);
+        throw error;
+      }
+    }
+
+    // Function to tokenize the text and apply background colors to tokens
+    async function processInput(tokenizers, encoderNum) {
+      const inputText = document.getElementById('inputText').value;
+      const outputDiv = document.getElementById(`output-encoder-type-${encoderNum}`);
+      const tokenCountDiv = document.getElementById(`token-count-encoder-type-${encoderNum}`);
+      const encoderType = document.getElementById(`encoder-type-${encoderNum}`).value;
+      const tokenizer = tokenizers[encoderType];
+
+      try {
+        // Tokenize the input text
+        let tokens = [];
+        tokens = tokenizer.tokenize(inputText);
+
+        // Generate HTML with token boundaries highlighted
+        let outputHTML = '';
+        let tokenCount = 0;
+
+        for (const tokenId of tokens) {
+          // Detokenize each token individually
+          const tokenStr = tokenizer.detokenize([tokenId]);
+          // Replace space with HTML non-breaking space
+          const htmlTokenStr = tokenStr.replace(/[&<>"'\t ]/g, match => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;', '\t': '<tab/>', ' ': '&nbsp;'})[match]);
+
+          outputHTML += `<span class="token token-${tokenCount % 4}">${htmlTokenStr.replace(/\n/g, `</span><br><span class="token token-${tokenCount % 4}">`)}</span>`;
+          tokenCount++;
+        }
+
+        // Update the output div with the generated HTML
+        outputDiv.innerHTML = outputHTML;
+
+        // Update the token count div
+        tokenCountDiv.innerText = `Characters: ${inputText.length}, Tokens: ${tokens.length}`;
+
+      } catch (error) {
+        console.error('Error tokenizing input:', error);
+      }
+    }
+
+    // Entry point
+    async function initialize() {
+      // Load token data
+      const tokenizers = {};
+      tokenizers['general-english-65535'] = await loadTokenData('general-english-65535.bin');
+      tokenizers['code-32000'] = await loadTokenData('code-32000.bin');
+      tokenizers['code-65535'] = await loadTokenData('code-65535.bin');
+
+      // Attach event handler to input element
+      const inputTextElement = document.getElementById('inputText');
+      inputTextElement.addEventListener('input', () => {
+        processInput(tokenizers, '1');
+        processInput(tokenizers, '2');
+      });
+
+      // Attach event handler to dropdown elements
+      const encoderType1Element = document.getElementById('encoder-type-1');
+      encoderType1Element.addEventListener('change', () => {
+        processInput(tokenizers, '1');
+      });
+
+      const encoderType2Element = document.getElementById('encoder-type-2');
+      encoderType2Element.addEventListener('change', () => {
+        processInput(tokenizers, '2');
+      });
+    
+      processInput(tokenizers, '1');
+      processInput(tokenizers, '2');
+    }
+
+    // Initialize the page
+    window.onload = initialize;
+  </script>
+</head>
+<body>
+  <div id="container">
+    <h1>tokenmonster test</h1>
+    <div align="center" class="m">(<a href="https://platform.openai.com/tokenizer" target="_blank" class="m">compare with OpenAI tokenizer</a>)</div>
+    <div id="mbnote">Note: Multi-byte characters can be tokenized, but because multi-byte characters can be split during tokenization, the visual guide here doesn't work.</div>
+    <textarea id="inputText" rows="5" cols="50">import struct
+      from collections import defaultdict
+      
+      class TokenMonster:
+          def __init__(self):
+              self.word2id = defaultdict(int)
+              self.id2word = []
+              self.max_token_len = 0
+      
+          def load(self, filename):
+              with open(filename, 'rb') as file:
+                  encoded_integer = file.read(8)
+                  n = struct.unpack('>Q', encoded_integer)[0]
+      
+                  self.max_token_len = 0
+                  for i in range(n):
+                      len_byte = file.read(1)
+                      len_ = struct.unpack('B', len_byte)[0]
+                      str_ = file.read(len_).decode()
+      
+                      self.max_token_len = max(self.max_token_len, len_)
+                      self.word2id[str_] = i
+      
+                  self.id2word = list(self.word2id.keys())
+      
+                  if file.read():
+                      raise Exception("Unexpected data found after processing the file.")
+      
+          def tokenize(self, text):
+              tokens = []
+              i = 0
+              text_len = len(text)
+      
+              while i < text_len:
+                  matched_token = False
+      
+                  for len_ in range(self.max_token_len, 0, -1):
+                      if (i + len_) <= text_len:
+                          substr = text[i: i+len_]
+                          if substr in self.word2id:
+                              tokens.append(self.word2id[substr])
+                              i += len_
+                              matched_token = True
+                              break
+      
+                  if not matched_token:
+                      i += 1
+      
+              return tokens
+      
+          def detokenize(self, tokens):
+              return ''.join(self.id2word[id_] for id_ in tokens)
+      </textarea>
+    <div class="output-container">
+      <div class="output-box">
+        <div class="select-wrapper">
+          <select id="encoder-type-1">
+            <option value="general-english-65535" selected="selected">general-english-65535</option>
+            <option value="general-english-32000">general-english-32000</option>
+            <option value="code-65535">code-65535</option>
+            <option value="code-32000">code-32000</option>
+          </select>
+        </div>
+        <div id="output-encoder-type-1"></div>
+        <div id="token-count-encoder-type-1" class="token-count"></div>
+      </div>
+      <div class="output-box">
+        <div class="select-wrapper">
+          <select id="encoder-type-2">
+            <option value="general-english-65535">general-english-65535</option>
+            <option value="general-english-32000">general-english-32000</option>
+            <option value="code-65535" selected="selected">code-65535</option>
+            <option value="code-32000">code-32000</option>
+          </select>
+        </div>
+        <div id="output-encoder-type-2"></div>
+        <div id="token-count-encoder-type-2" class="token-count"></div>
+      </div>
+      
+    </div>
+  </div>
+</body>
+</html>
