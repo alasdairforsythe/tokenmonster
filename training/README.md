@@ -29,7 +29,7 @@ Usage of ./getalltokens:
         output filename for the dictionary(required)
 ```
 
-Then run ./trainvocab. It'll use `-dir` to store various states, which it's working, which you can also use to resume it from that point if for any reason you stop and start it again. Don't forget to set `-workers` to the number of CPU threads you have minus 1. You can speed it up by reducing `-midway-target` to 200,000 and `-overlap` to 1, but the final vocabulary might be less optimal.
+Then run ./trainvocab. It'll use `-dir` to store various states, while it's working, which you can also use to resume it from that point if for any reason you stop and start it again. Don't forget to set `-workers` to the number of CPU threads you have minus 1. You can speed it up by reducing `-midway-target` to 200,000 and `-overlap` to 1, but the final vocabulary might be less optimal.
 ```
 Usage of ./trainvocab:
   -dataset string
