@@ -3,7 +3,9 @@
 
 Given a text dataset, a vocabulary-size and a maximum-token-length, tokenmonster selects the tokens that optimally represent your dataset at that vocabulary size by brute force. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. Prebuilt vocabularies are provided, as well as tools & libraries for tokenization and detokenization using the prebuilt or your own vocabularies.
 
-tokenmonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models by choosing better tokens. By selecting more optimal tokens, text can be represented with 20-30% less tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 20-30%.
+[Test tokenmonster in your browser here.](https://bot.co/tokenmonster.html)
+
+tokenmonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models by choosing better tokens. By selecting more optimal tokens, text can be represented with 20-30% less tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 20-30%. The code-optimized tokenizers do even better, [see it for yourself](https://bot.co/tokenmonster.html).
 
 I also believe that tokenmonster vocabularies will improve the comprehension of Large Language Models. For more details see [How and Why](#how-and-why).
 
