@@ -11,14 +11,34 @@ import (
 	"github.com/AlasdairF/Custom"
 )
 
+/*
+
+The defaults are good for an 840MB dataset with peak RAM usage around 200GB.
+Increasing the workers will increase memory requirements considerably, 2x the workers means 3x the memory.
+Using only 1 worker is much faster because it uses only 1 dictionary instead of having multiple dictionaries that all need to be sorted and aggregated.
+The benefits would only be seen with more than 4 workers, but that would require perhaps 800 GB RAM.
+microChunks can be increased to reduce memory usage, but at a massive cost of performance.
+Long story short: unless you have 512GB or more RAM, it's better to use 1 worker.
+
+*/
+
 var (
 	datasetFilename string
 	saveFilename string
-	maxTokenLength int = 30
-	minOccurPerChuk int = 3
-	minOccurTotal int = 50
+	maxTokenLength int = 32
+	minOccurPerChunk int = 3
+	minOccurTotal int = 100
 	chunkSize int = 100000000
+	microChunks = 1
+	workers = 1
+	includeSingleBytes = false
 )
+
+type workStruct struct {
+	chunkId int
+	data [][]byte
+	tokens *pansearch.CounterBytes
+}
 
 func flagRequired(name string, value interface{}) {
     switch v := reflect.ValueOf(value); v.Kind() {
@@ -52,13 +72,59 @@ func save_tokens(filename string, data [][]byte) error {
 	return nil
 }
 
+
+func processChunk(asset workStruct, numChunks int, trim bool) *pansearch.CounterBytes {
+	log.Println(`Finding tokens in chunk`, asset.chunkId, `of`, numChunks)
+	tokens := asset.tokens
+	lastMicroChunk := len(asset.data) - 1
+	var i, to, l, length int
+	var minLength = 2
+	if includeSingleBytes {
+		minLength = 1
+	} 
+	// Process microchunks
+	for onMicroChunk, data := range asset.data {
+		l = len(data) - maxTokenLength // the data has been split into chunks anyway, so we can just ignore the last maxTokenLength character and save bound checking in the main loop
+		// Move forward one character at a time capturing all possible combinations of characters from 2 to maxTokenLength
+		for i = 0; i < l; i++ {
+			to = maxTokenLength
+			for length = minLength; length <= to; length++ {
+				_ = data[i : i+length] // Eliminate bounds check
+				tokens.Add([]byte(data[i:i+length]), 1)
+			}
+		}
+		// Optimize the micro chunk to save memory
+		if onMicroChunk < lastMicroChunk {
+			tokens.Build()
+			tokens.Optimize()
+		}
+	}
+	// Trim the chunk
+	if trim {
+		log.Println(`Trimming chunk`, asset.chunkId, `of`, numChunks)
+		tokens.Build_With_Min(minOccurPerChunk)
+		tokens.Optimize()
+	}
+	log.Println(`Completed chunk`, asset.chunkId, `of`, numChunks)
+	return tokens
+}
+
+func worker(channelWork chan workStruct, channelResult chan *pansearch.CounterBytes, numChunks int) {
+	for asset := range channelWork {
+		channelResult <- processChunk(asset, numChunks, true)
+	}
+}
+
 func main() {
 	flag.StringVar(&datasetFilename, "dataset", datasetFilename, "filename of the dataset plain-text (required)")
 	flag.StringVar(&saveFilename, "output", saveFilename, "output filename for the dictionary(required)")
 	flag.IntVar(&maxTokenLength, "max-token-length", maxTokenLength, "the maximum length of a token")
-	flag.IntVar(&minOccurPerChuk, "min-occur-chunk", minOccurPerChuk, "tokens will be trimmed if they occur less frequently than this per chunk")
+	flag.IntVar(&minOccurPerChunk, "min-occur-chunk", minOccurPerChunk, "tokens will be trimmed if they occur less frequently than this per chunk")
 	flag.IntVar(&minOccurTotal, "min-occur", minOccurTotal, "tokens will be trimmed if they occur less frequently than this in the dataset")
-	flag.IntVar(&chunkSize, "chunk-size", chunkSize, "the number of bytes processed at a time, you need around 1000x this much RAM, so 10GB of RAM for 10MB chunk-size")
+	flag.IntVar(&chunkSize, "chunk-size", chunkSize, "the number of bytes processed at a time, higher is faster but it means more RAM requirements")
+	flag.IntVar(&microChunks, "micro-chunks", microChunks, "The smaller this number, the slower it is but it will reduce peak memory usage")
+	flag.IntVar(&workers, "workers", workers, "Multi-threading, also multiplies RAM requirements, you can't have more workers than chunks")
+	flag.BoolVar(&includeSingleBytes, "include-single-bytes", includeSingleBytes, "If you enable this single byte tokens will also be recorded (default false)")
 	flag.Parse()
 	flagRequired("dataset", datasetFilename)
 	flagRequired("output", saveFilename)
@@ -69,58 +135,85 @@ func main() {
 		panic(err)
     }
 
-	obj := new(pansearch.CounterBytes)
-	chunks := (len(filedata) / chunkSize)
-	if (chunks * chunkSize) < len(filedata) {
-		chunks++
+	numChunks := (len(filedata) / chunkSize)
+	if (numChunks * chunkSize) < len(filedata) {
+		numChunks++
 	}
-	var i, length, from, to int
-	var data []byte
+	microChunkSize := chunkSize / microChunks
 
-	// Split the data into chunks
-	data_chunk := make([][]byte, chunks)
-	for i=0; i<chunks; i++ {
-		from = i * chunkSize
-		to = (i + 1) * chunkSize
-		if len(filedata) < to {
-			to = len(filedata)
+	var i, i2, thisto int
+
+	// Split the data into chunks & microchunks
+	var from = 0
+	var to = microChunkSize
+	data_chunk := make([][][]byte, numChunks)
+	for i=0; i<numChunks; i++ {
+		data_chunk[i] = make([][]byte, microChunks)
+		thisto = from + chunkSize
+		if len(filedata) < thisto {
+			thisto = len(filedata)
 		}
-		data_chunk[i] = filedata[from:to]
+		for i2=0; i2<microChunks; i2++ {
+			to = from + microChunkSize
+			if thisto < to {
+				to = thisto
+			}
+			data_chunk[i][i2] = filedata[from:to]
+			from = to
+		}
 	}
 
-	// Loop through all the chunks
-	for run:=0; run<chunks; run++ {
-		log.Println(`Finding tokens in`, (run+1), `of`, chunks)
-		data = data_chunk[run]
-		// Move forward one character at a time capturing all possible combinations of characters from 2 to maxTokenLength
-		for i = 0; i < len(data); i++ {
-			to = maxTokenLength
-			if len(data) - i < maxTokenLength {
-				to = len(data) - i
-			}
-			for length = 2; length <= to; length++ {
-				obj.Add([]byte(data[i:i+length]), 1)
-			}
+	// Get the results
+	tokens := new(pansearch.CounterBytes)
+	if workers == 1 { // only 1 worker, no need for goroutines or channels
+		to = numChunks - 1
+		for i=0; i<to; i++ {
+			tokens = processChunk(workStruct{i+1, data_chunk[i], tokens}, numChunks, true)
 		}
-		log.Println(`Trimming`, (run+1), `of`, chunks)
-		if (run+1 < chunks) { // if this is not the final chunk
-			if minOccurPerChuk > 1 {
-				obj.Build_With_Min(minOccurPerChuk) // aggregate and delete
+		tokens = processChunk(workStruct{i+1, data_chunk[i], tokens}, numChunks, false)
+	} else {
+		// Launch the worker threads
+		var channelWork = make(chan workStruct, numChunks)
+		var channelResult = make(chan *pansearch.CounterBytes, numChunks)
+		for i=0; i<workers; i++ {
+			go worker(channelWork, channelResult, numChunks)
+		}
+		// Send the chunks
+		for i=0; i<numChunks; i++ {
+			channelWork <- workStruct{i+1, data_chunk[i], new(pansearch.CounterBytes)} // each chunk has its own dictionary
+		}
+		i = 0
+		var received bool
+		var tok []byte
+		var val int
+		var eof bool
+		for result := range channelResult {
+			if received {
+				// Iterate over the tokens returned from that chunk and add them to the base dictionary of everything
+				if result.Reset() {
+					for eof = false; !eof; {
+						tok, val, eof = result.Next()
+						tokens.Add(tok, val)
+					}
+				}
+				result = nil // free
+				tokens.Build()
 			} else {
-				obj.Build() // aggregate
+				tokens = result // the first one back becomes our base dictionary
+				received = true
 			}
-		} else { // final chunk
-			if minOccurTotal > 1 {
-				obj.Build_With_Min(minOccurTotal)  // aggregate and delete
-			} else {
-				obj.Build() // aggregate
+			// Stop once all chunks are received
+			if i++; i == numChunks {
+				break
 			}
 		}
-		log.Println(`Tokens`, obj.Len())
 	}
 
-	log.Println(`Saving final`)
-	if err := save_tokens(saveFilename, obj.Keys()); err != nil {
+	log.Println(`Trimming final tokens for min`, minOccurTotal)
+	tokens.Build_With_Min(minOccurTotal)
+
+	log.Println(`Saving tokens list`)
+	if err := save_tokens(saveFilename, tokens.Keys()); err != nil {
 		panic(err)
 	}
 	log.Println(`Done`)

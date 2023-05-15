@@ -183,7 +183,10 @@ h1 {
         outputDiv.innerHTML = outputHTML;
 
         // Update the token count div
-        tokenCountDiv.innerText = `Characters: ${inputText.length}, Tokens: ${tokens.length}`;
+        let avg = inputText.length / tokens.length;
+        let avgFormatted = avg.toFixed(2);
+        tokenCountDiv.innerText = `Characters: ${inputText.length}, Tokens: ${tokens.length}, Chr/Tok: ${avgFormatted}`;
+
 
       } catch (error) {
         console.error('Error tokenizing input:', error);
