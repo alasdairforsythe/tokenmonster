@@ -31,7 +31,7 @@ I also believe that TokenMonster vocabularies will improve the comprehension of 
 * [Capcode](#capcode)
 * [Normalization](#normalization)
 * [Which Vocabulary Size To Use](#which-vocabulary-size-to-use)
-* [How does it work and how is it different from BPE?](#how-does-it-works-and-how-is-it-different-from-bpe)
+* [How does it work and how is it different from BPE?](#how-does-it-work-and-how-is-it-different-from-bpe)
 * [The Ungreedy Tokenization Algorithm](#the-ungreedy-tokenization-algorithm)
 * [The Philosophy of Tokenization](#the-philosophy-of-tokenization)
 * [To Do](#to-do)
