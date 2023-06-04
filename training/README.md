@@ -1,4 +1,4 @@
-## Training tokenmonster
+## Training TokenMonster
 
 First prepare your dataset. The "extract_text_from_jsonl_parquet.py" file can help with this, as many of these datasets are in either jsonl or parquet. To use for generating a tokenizer you need raw text.
 It's important that the dataset represents how you want to tokenize. You need to carefully consider what is in it. For example, if it's largely formal language, then the tokenizer will prefer formal language and might decide informal language is not worth giving tokens to. If you want a balance between English and French, then you'll need to have 50% English and 50% French in the training data. You see?
