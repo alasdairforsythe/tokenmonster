@@ -227,6 +227,7 @@ h1 {
         loadTokenData('english-65536-capcode.vocab').then(data => tokenizers['english-65536-capcode'] = data),
         loadTokenData('english-50256-capcode.vocab').then(data => tokenizers['english-50256-capcode'] = data),
         loadTokenData('english-32000-capcode.vocab').then(data => tokenizers['english-32000-capcode'] = data),
+        loadTokenData('english-24000-capcode.vocab').then(data => tokenizers['english-24000-capcode'] = data),
         loadTokenData('code-100256-capcode.vocab').then(data => tokenizers['code-100256-capcode'] = data),
         loadTokenData('code-32000-capcode.vocab').then(data => tokenizers['code-32000-capcode'] = data),
         loadTokenData('english-100256.vocab').then(data => tokenizers['english-100256'] = data),
@@ -300,14 +301,15 @@ h1 {
         <div class="select-wrapper">
           <select id="encoder-type-1">
             <option value="english-100256-capcode" selected="selected">english-100256-capcode</option>
+            <option value="english-100256">english-100256</option>
             <option value="english-65536-capcode">english-65536-capcode</option>
             <option value="english-50256-capcode">english-50256-capcode</option>
             <option value="english-32000-capcode">english-32000-capcode</option>
+            <option value="english-24000-capcode">english-24000-capcode</option>
             <option value="code-100256-capcode">code-100256-capcode</option>
-            <option value="code-32000-capcode">code-32000-capcode</option>
-            <option value="english-100256">english-100256</option>
             <option value="code-100256">code-100256</option>
             <option value="code-50256">code-50256</option>
+            <option value="code-32000-capcode">code-32000-capcode</option>
             <option value="code-32000">code-32000</option>
           </select>
         </div>
@@ -318,14 +320,15 @@ h1 {
         <div class="select-wrapper">
           <select id="encoder-type-2">
             <option value="english-100256-capcode">english-100256-capcode</option>
+            <option value="english-100256">english-100256</option>
             <option value="english-65536-capcode">english-65536-capcode</option>
             <option value="english-50256-capcode">english-50256-capcode</option>
             <option value="english-32000-capcode">english-32000-capcode</option>
+            <option value="english-24000-capcode">english-24000-capcode</option>
             <option value="code-100256-capcode">code-100256-capcode</option>
-            <option value="code-32000-capcode">code-32000-capcode</option>
-            <option value="english-100256">english-100256</option>
             <option value="code-100256">code-100256</option>
             <option value="code-50256">code-50256</option>
+            <option value="code-32000-capcode">code-32000-capcode</option>
             <option value="code-32000" selected="selected">code-32000</option>
           </select>
         </div>

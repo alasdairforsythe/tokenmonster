@@ -1,20 +1,37 @@
 import unicodedata
 import os
 import requests
+import array
 import capcode
 import timeit
 
 class TokenMonster:
 
     class DecoderClass:
+
         def __init__(self, parent):
             self.parent = parent
             self.remainder = b''
-            self.capcodeDecoder = capcode.Decoder
+            self.capcodeDecoder = capcode.Decoder()
+
         def detokenize(self, tokens):
             if self.parent.charset == 0: # binary
                 return self.parent.detokenize_bytes(tokens)
-            decoded = self.remainder + b''.join(self.parent.id2word[id] for id in tokens if id in self.parent.id2word)
+            # Compute total bytes needed
+            nwords = len(self.parent.id2word)
+            total_bytes = len(self.remainder) + sum(len(self.parent.id2word[id]) if id < nwords else 0 for id in tokens)
+            # Create a bytearray of the necessary size
+            decoded = bytearray(total_bytes)
+            # Copy bytes into bytearray
+            decoded[:len(self.remainder)] = self.remainder
+            offset = len(self.remainder)
+            for id in tokens:
+                if id < nwords:
+                    bytes_val = self.parent.id2word[id]
+                    decoded[offset:offset + len(bytes_val)] = bytes_val
+                    offset += len(bytes_val)
+            # Convert bytearray back to bytes
+            decoded = bytes(decoded)
             if self.parent.charset == 1: # UTF-8
                 invalidBytes = incomplete_utf8_bytes(decoded)
                 decodedString = decoded[:len(decoded)-invalidBytes]
@@ -100,7 +117,7 @@ class TokenMonster:
             length = buffer[offset]
             offset += 1
 
-            # Read length bytes as a string
+            # Read key
             key = buffer[offset:offset + length]
             offset += length
             max_token_len = max(max_token_len, length)
@@ -233,9 +250,25 @@ class TokenMonster:
                 i += 1
         return tokens
 
+#def detokenize_bytes(self, tokens):
+#    return b''.join(self.parent.id2word.get(id, b'') for id in tokens)
+
 def detokenize_bytes(self, tokens):
-    return b''.join(self.id2word[id] for id in tokens if id in self.id2word)
-    # returns a byte string, use .decode("utf-8") to convert it to a regular string
+    # Compute total bytes needed
+    nwords = len(self.id2word)
+    total_bytes = sum(len(self.parent.id2word[id]) if id < nwords else 0 for id in tokens)
+    # Create a bytearray of the necessary size
+    decoded = bytearray(total_bytes)
+    # Copy bytes into bytearray
+    offset = 0
+    for id in tokens:
+        if id < nwords:
+            bytes_val = self.parent.id2word[id]
+            decoded[offset:offset + len(bytes_val)] = bytes_val
+            offset += len(bytes_val)
+    # Convert bytearray back to bytes
+    decoded = bytes(decoded)
+    return decoded
 
 def incomplete_utf8_bytes(bytes_str):
     bytes_len = len(bytes_str)
@@ -302,12 +335,8 @@ def main():
     print(f'Time elapsed: {elapsed_time / 1000000:.3f} seconds')
     print()
 
-    decoder = vocab.decoder()
-    after = decoder.detokenize(tok)
-    if after == text:
-        print("Same as original")
-    else:
-        print("Not same as original")
+    # decoder = vocab.decoder()
+    # after = decoder.detokenize(tok) # it returns a UTF-8 string because that's the encoding of the vocabulary
 
 if __name__ == "__main__":
     main()
