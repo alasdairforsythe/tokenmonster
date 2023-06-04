@@ -248,9 +248,18 @@ def incomplete_utf8_bytes(bytes_str):
     if seq_start == -1:
         return bytes_len
     # Determine expected sequence length from leading byte
-    seq_len = 0
-    while ((bytes_str[seq_start] & (0b10000000 >> seq_len)) != 0):
-        seq_len += 1
+    first_byte = bytes_str[seq_start]
+    if (first_byte & 0b10000000) == 0:
+        seq_len = 1
+    elif (first_byte & 0b11100000) == 0b11000000:
+        seq_len = 2
+    elif (first_byte & 0b11110000) == 0b11100000:
+        seq_len = 3
+    elif (first_byte & 0b11111000) == 0b11110000:
+        seq_len = 4
+    else:
+        # This is not a valid UTF-8 starting byte
+        return bytes_len - seq_start
     # If sequence length is larger than the remaining bytes, it's incomplete
     if bytes_len - seq_start < seq_len:
         return seq_len - (bytes_len - seq_start)

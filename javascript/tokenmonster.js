@@ -399,7 +399,7 @@ function incompleteUTF8Bytes(bytes) {
   // Single byte or empty string
   if (bytesLen === 0)
       return 0;
-  if (bytes[bytesLen - 1] & 0b10000000 === 0)
+  if ((bytes[bytesLen - 1] & 0b10000000) === 0)
       return 0;
   // Find the start of the last character sequence
   let seqStart = bytesLen - 1;
@@ -409,14 +409,26 @@ function incompleteUTF8Bytes(bytes) {
   if (seqStart === -1)
       return bytesLen;
   // Determine expected sequence length from leading byte
-  let seqLen = 0;
-  while ((bytes[seqStart] & (0b10000000 >> seqLen)) !== 0)
-      seqLen++;
+  let firstByte = bytes[seqStart];
+  let seqLen;
+  if ((firstByte & 0b10000000) === 0) {
+      seqLen = 1;
+  } else if ((firstByte & 0b11100000) === 0b11000000) {
+      seqLen = 2;
+  } else if ((firstByte & 0b11110000) === 0b11100000) {
+      seqLen = 3;
+  } else if ((firstByte & 0b11111000) === 0b11110000) {
+      seqLen = 4;
+  } else {
+      // This is not a valid UTF-8 starting byte
+      return bytesLen - seqStart;
+  }
   // If sequence length is larger than the remaining bytes, it's incomplete
   if (bytesLen - seqStart < seqLen)
       return seqLen - (bytesLen - seqStart);
   return 0;
 }
+
 
 function incompleteUTF16Bytes(bytes) {
   let bytesLen = bytes.length;
