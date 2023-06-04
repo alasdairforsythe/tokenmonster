@@ -11,8 +11,9 @@ The following tables show the number of tokens it took to tokenize each test dat
 | tokenmonster code-100256-capcode    | 291714415 +10% | **241735648 +54%** | 24771080 +22% | 558221143 +29% |
 | tokenmonster code-100256            | 295035719 +9%  | 242439606 +53% | 25086094 +20% | 562561419 +28% |
 | tokenmonster english-32000-capcode  | 289148386 +11% | 314766168 +18% | 26286333 +15% | 630200887 +15% |
+| tokenmonster english-24000-capcode  | 302203947 +6%  | 330848326 +12% | 27628200 +9%  | 660680473 +9%  |
 
-Note that tokenmonster 32000-capcode tokenizes better than tiktoken's 100256 vocabulary.
+Note that tokenmonster 24000-capcode vocabulary tokenizes better than tiktoken's 100256 vocabulary.
 
 #### Vocab Size 50256
 
