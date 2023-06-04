@@ -1,5 +1,5 @@
 # TokenMonster
-<img width="337" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/743a4147-5cf2-4d60-8344-483f3e5bbce2">
+<img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
 TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's 32000 vocabulary tokenizes 15% more efficiently than tiktoken's 100256 vocabulary. [See benchmarks](/benchmark).
 
