@@ -11,8 +11,9 @@ The following tables show the number of tokens it took to tokenize each test dat
 | tokenmonster code-100256-capcode    | 291714415 +10% | **241735648 +54%** | 24771080 +22% | 558221143 +29% |
 | tokenmonster code-100256            | 295035719 +9%  | 242439606 +53% | 25086094 +20% | 562561419 +28% |
 | tokenmonster english-32000-capcode  | 289148386 +11% | 314766168 +18% | 26286333 +15% | 630200887 +15% |
+| tokenmonster english-24000-capcode  | 302203947 +6%  | 330848326 +12% | 27628200 +9%  | 660680473 +9%  |
 
-Note that tokenmonster 32000-capcode tokenizes better than tiktoken's 100256 vocabulary.
+Note that tokenmonster 24000-capcode vocabulary tokenizes better than tiktoken's 100256 vocabulary.
 
 #### Vocab Size 50256
 
@@ -41,8 +42,8 @@ This table gives some rough figures for average speed of the "tokenization" as r
 
 For a fair test, the benchmarks were performed on datasets that the TokenMonster vocabularies had not previously seen.
 
-"the_pile" is the test dataset from [The Pile](https://the-eye.eu/public/AI/pile/), with the text extracting using [extract_text_from_jsonl_parquet.py](/training). It represents general text. Extracted size is 1,526 MB.
+`the_pile` is the test dataset from [The Pile](https://the-eye.eu/public/AI/pile/), with the text extracting using [extract_text_from_jsonl_parquet.py](/training). It represents general text. Extracted size is 1,526 MB.
 
-"github" is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1,313 MB.
+`github` is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7 GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1,313 MB.
 
-"evov_instruct" is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
+`evov_instruct` is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
