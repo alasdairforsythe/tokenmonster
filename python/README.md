@@ -1,12 +1,12 @@
 ## Python Usage
 
-I haven't yet made a PyPI package, so for now you will just have to download tokenmonster.py file from here, and also capcode.py from [here](https://github.com/alasdairforsythe/capcode/tree/main/python).
+I haven't yet made a PyPI package, so for now you will just have to download `tokenmonster.py` from here, and also `capcode.py` from [here](https://github.com/alasdairforsythe/capcode/tree/main/python).
 
 To load a vocabulary:
 ```python
 vocab = TokenMonster.load(local_path, remote_path)
 ```
-remote_path is an optional argument. If the local_path does not exist it will attempt to download the vocabulary file from remote_path and then save it to local_path.
+`remote_path` is an optional argument. If the `local_path` does not exist it will attempt to download the vocabulary file from `remote_path` and then save it to `local_path`.
 
 To tokenize some text:
 ```python

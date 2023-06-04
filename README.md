@@ -1,7 +1,7 @@
 # TokenMonster
 <img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
-TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's 32000 vocabulary tokenizes 15% more efficiently than tiktoken's 100256 vocabulary. [See benchmarks](/benchmark).
+TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's 32000 vocabulary tokenizes 15% more efficiently than tiktoken's 100256 vocabulary. [See benchmark](./benchmark).
 
 Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster selects the tokens that optimally represent your dataset at that vocabulary size. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. [Prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & native implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
@@ -9,10 +9,10 @@ You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), 
 
 TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By selecting better tokens, text can be represented with 35% less tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 35%. The code-optimized tokenizers do even better, [see for yourself](https://bot.co/tokenmonster/).
 
-I also believe that TokenMonster vocabularies will improve the comprehension of Large Language Models. For more details see [How and Why](#how-and-why).
+I also believe that TokenMonster vocabularies will improve the comprehension of Large Language Models. For more details see [The Philosophy of Tokenization](#the-philosophy-of-tokenization).
 
 ## Features
-- Outperforms other tokenization algorithms ([benchmarks](#benchmarks))
+- Outperforms other tokenization algorithms ([benchmark](./benchmark))
 - Longer text generation at faster speed
 - Selects the optimal vocabulary
 - Ungreedy
@@ -25,12 +25,14 @@ I also believe that TokenMonster vocabularies will improve the comprehension of 
 ## Table of Contents
 
 * Usage [Go](./go/) | [Python](./python/) | [Javascript](./javascript/) | [Training](./training/)
-* [Benchmarks](./benchmarks/)
+* [Benchmark](./benchmark)
 * [Prebuilt Vocabularies](#prebuilt-vocabularies)
 * [Datasets](#datasets)
 * [Capcode](#capcode)
 * [Normalization](#normalization)
 * [Which Vocabulary Size To Use](#which-vocabulary-size-to-use)
+* [How does it work and how is it different from BPE?](#how-does-it-work-and-how-is-it-different-from-bpe)
+* [The Ungreedy Tokenization Algorithm](#the-ungreedy-tokenization-algorithm)
 * [The Philosophy of Tokenization](#the-philosophy-of-tokenization)
 * [To Do](#to-do)
 
@@ -124,7 +126,7 @@ The following programming and markup languages are represented in both "english"
 
 [Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. On English text, using capcode offers a small performance benefit (around 2% less tokens), long sequences of capitals can be tokenized without using many tokens, and it enables the model to more easily learn the connection between lowercase and uppercased words. This advantage is much less pronounced on code because lowercase and uppercaose have a distinct meaning to on another in code. I would recommend to use capcode if you are tokenizing a language that regularly uses capital letters (such as English) and not use capcode if you are tokenizing a language without capitals (such as Chinese) or code. If you are tokenizing a mix of English and code, or English and Chinese, using capcode will likely be beneficial. You can test it [here](https://bot.co/tokenmonster/) when making your decision.
 
-You enable capcode when creating a vocabulary by passing the -capcode flag. The rest is taken care of for you, including during tokenization and detokenization. Currently capcode is supported only with UTF-8.
+You enable capcode when creating a vocabulary by passing the `-capcode` flag. The rest is taken care of for you, including during tokenization and detokenization. Currently capcode is supported only with UTF-8.
 
 ## Normalization
 
