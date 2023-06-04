@@ -161,8 +161,7 @@ Byte-Per-Encoding starts with single byte tokens and merges frequently occuring 
 
 The secret sauce that enables TokenMonster to outperform other algorithms is made from:
 1. The distillation method is an effective means of separating that which is wanted from that which is not, without losing any of the cream.
-2. It uses my own highly-optimized algorithms, both for lookup ([pansearch](https://github.com/alasdairforsythe/pansearch)) and the ungreedy tokenization algorithm, without which it would not be feasible to test hundreds of thousands of potential vocabularies against a gigabyte of text within a reasonable timeframe.
-3. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm, which is a necessary step for optimal tokenization.
+2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm, which is a necessary step for optimal tokenization.
 
 In simplified terms it does the following:
 - Generates all possible tokens in the dataset (3 billion)
