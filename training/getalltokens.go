@@ -177,7 +177,7 @@ func worker(channelWork chan workStruct, channelResult chan *pansearch.CounterBy
 func main() {
 	flag.StringVar(&datasetFilename, "dataset", datasetFilename, "filename of the dataset plain-text (required)")
 	flag.StringVar(&saveFilename, "output", saveFilename, "output filename for the dictionary (required)")
-	flag.StringVar(&charset, "charset", charset, "One of: UTF-8, binary (required)")
+	flag.StringVar(&charset, "charset", charset, "One of: UTF-8, UTF-16, binary (required)")
 	flag.IntVar(&maxTokenLength, "max-token-length", maxTokenLength, "the maximum length of a token")
 	flag.IntVar(&minOccurPerChunk, "min-occur-chunk", minOccurPerChunk, "tokens will be trimmed if they occur less frequently than this per chunk")
 	flag.IntVar(&minOccurTotal, "min-occur", minOccurTotal, "tokens will be trimmed if they occur less frequently than this in the dataset")

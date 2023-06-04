@@ -184,7 +184,7 @@ func loadTokensFromFile(filename string) ([][]byte, error) {
 
 func usage() {
 	fmt.Println(`Usage:  ./exporttokens tokensfilename outputfilename -capcode -charset UTF-8`)
-	fmt.Println(`        -charset (required) must be one of: UTF-8, binary`)
+	fmt.Println(`        -charset (required) must be one of: UTF-8, UTF-16, binary`)
 	fmt.Println(`        -capcode (optional) flag must be used if capcode were used during training`)
 	fmt.Println(`        -txt (optional) saves the tokens in a text file separated one per line`)
 	fmt.Println(`Output: outputfilename.vocab : the vocabulary for tokenization`)

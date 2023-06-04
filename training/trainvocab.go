@@ -689,7 +689,7 @@ func main() {
 	flag.IntVar(&keepTrying, "keep-trying", keepTrying, "program will exit when unable to find a better match this many times in a row")
 	flag.BoolVar(&noReserve256bytes, "no-reserve-256", noReserve256bytes, "disable default behavior of including 256 tokens representing every single byte (default false)")
 	flag.BoolVar(&usingCapcode, "capcode", usingCapcode, "expect capcode encoding, which modifies ungreedy behavior (default false)")
-	flag.StringVar(&charset, "charset", charset, "One of: UTF-8, binary (required)")
+	flag.StringVar(&charset, "charset", charset, "One of: UTF-8, UTF-16, binary (required)")
 	flag.Parse()
     flagRequired("max-token-length", maxTokenLength)
     flagRequired("vocab", vocabSize)

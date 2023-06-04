@@ -3,7 +3,7 @@
 First prepare your dataset. The "extract_text_from_jsonl_parquet.py" file can help with this, as many of these datasets are in either jsonl or parquet. To use for generating a tokenizer you need raw text.
 It's important that the dataset represents how you want to tokenize. You need to carefully consider what is in it. For example, if it's largely formal language, then the tokenizer will prefer formal language and might decide informal language is not worth giving tokens to. If you want a balance between English and French, then you'll need to have 50% English and 50% French in the training data. You see?
 
-Then you'll need to compile "getalltokens.go" and "trainvocab.go", preferably with Go version of at least 1.20:
+Then you'll need to compile "getalltokens.go", "trainvocab.go" & "exporttokens.go", preferably with Go version of at least 1.20:
 ```
 go mod init tokenmonster
 go mod tidy
@@ -12,26 +12,40 @@ go build trainvocab.go
 go build exporttokens.go
 ```
 
-First run ./getalltokens on your training data. The default settings require around 100GB of RAM. If you don't have that you'll need to reduce `-chunk-size` to something much lower, like 10,000,000 bytes or even 1,000,000. However, you then need to consider the effect of -min-occur-chunk, perhaps reduce it to 2. You can probably increase `-min-occur` to something much higher without losing any quality, I kept it low just in case.
+First run ./getalltokens on your training data. The default settings require around 100GB of RAM. If you don't have that you'll need to reduce `-chunk-size` to something much lower, like 10,000,000 bytes or even 1,000,000. However, you then need to consider the effect of -min-occur-chunk, perhaps reduce it to 2. You can probably increase `-min-occur` to something much higher without losing any quality, I kept it low just in case. Do not increase `-workers` higher than 1 unless you have more than 512 GB of RAM.
 ```
 Usage of ./getalltokens:
+  -capcode
+        use alternative uppercase encoding (default false)
+  -charset string
+        One of: UTF-8, UTF-16, binary (required)
   -chunk-size int
-        the number of bytes processed at a time, you need around 1000x this much RAM, so 10GB of RAM for 10MB chunk-size (default 100000000)
+        the number of bytes processed at a time, higher is faster but it means more RAM requirements (default 100000000)
   -dataset string
         filename of the dataset plain-text (required)
+  -include-single-bytes
+        If you enable this single byte tokens will also be recorded (default false)
   -max-token-length int
-        the maximum length of a token (default 30)
+        the maximum length of a token (default 32)
+  -micro-chunks int
+        The higher this number, the slower it is but it will reduce peak memory usage (default 1)
   -min-occur int
-        tokens will be trimmed if they occur less frequently than this in the dataset (default 50)
+        tokens will be trimmed if they occur less frequently than this in the dataset (default 100)
   -min-occur-chunk int
         tokens will be trimmed if they occur less frequently than this per chunk (default 3)
   -output string
-        output filename for the dictionary(required)
+        output filename for the dictionary (required)
+  -workers int
+        Multi-threading, also multiplies RAM requirements, you can't have more workers than chunks (default 1)
 ```
 
-Then run ./trainvocab. It'll use `-dir` to store various states, while it's working, which you can also use to resume it from that point if for any reason you stop and start it again. Don't forget to set `-workers` to the number of CPU threads you have minus 1. You can speed it up by reducing `-midway-target` to 200,000 and `-overlap` to 1, but the final vocabulary might be less optimal.
+Then run ./trainvocab passing the filename of the file created by getalltokens as the `-dictionary`. It'll use `-dir` to store various states, while it's working, which you can also use to resume it from that point if for any reason you stop and start it again. `-workers` defaults to the number of CPU threads you have minus 1. You can speed it up by reducing `-midway-target` to 200,000 and reducing `-percentage`, but the final vocabulary might be less optimal. The `-charset` and `-capcode` variables are not stored anywhere, so you remember to use them exactly the same in all three executables.
 ```
 Usage of ./trainvocab:
+  -capcode
+        expect capcode encoding, which modifies ungreedy behavior (default false)
+  -charset string
+        One of: UTF-8, UTF-16, binary (required)
   -dataset string
         filename of the dataset plain-text (required)
   -dictionary string
@@ -39,13 +53,15 @@ Usage of ./trainvocab:
   -dir string
         The directory to save the results within (required)
   -keep-trying int
-        program will exit when unable to find a better match this many times in a row (default 500)
+        program will exit when unable to find a better match this many times in a row (default 1000)
   -max-token-length int
         the maximum length of a token (required)
   -midway-target int
         aggressive until this point, beneath this the full dataset is used for every worker (default 500000)
-  -overlap int
-        how much overlap in the dataset given to each worker until midway (default 4)
+  -no-reserve-256
+        disable default behavior of including 256 tokens representing every single byte (default false)
+  -percentage int
+        percentage of the dataset given to each worker before midway (default 15)
   -strips int
         number of strips to distribute to the workers (default 100)
   -vocab int
@@ -53,17 +69,19 @@ Usage of ./trainvocab:
   -workers int
         number of worker threads to run, excluding main thread (default 79)
 ```
+In case you want to stop trainvocab for any reason, there is `interval` file in the `-dir` that are the reamining tokens saved at an interval, which you can use as the `-dictionary` input and it'll continue from that point. It's also possible to provide one of the final vocabularies as `-dictionary` and trainvocab will attempt to keep-trying using that as the current best vocabulary. Any file in `-dir` can be used as `-dictionary` to resume from that point.
 
-Once completed the final best vocabulary will have its filename written to stdout and you'll find it in `-dir`. It's compressed, so to uncompress it you need to run it through `./exporttokens` like this:
+If you want to be fancy, you can use different datasets for `getalltokens` and `trainvocab`. Doing so will help avoid overfitting.
+
+Once completed the final best vocabulary will have its filename written to stdout and it's also the alphabetically first file in `-dir`. It's compressed, so to uncompress it you need to run it through `./exporttokens` like this:
 ```
-./exporttokens dir/123456789_1234.zlib whatever
+./exporttokens dir/123456789_1234.zlib vocab_name -capcode -charset UTF-8 -txt
 ```
 This will result in 2 files:
 ```
-whatever.txt
-whatever.bin
+vocab_name.vocab
+vocab_name.txt
 ```
-The .txt file is just a list of the tokens separated, but since newlines can be in the tokens, it's only for looking at.
-The .bin file is the tokenizer.
+The .txt file is just a list of the tokens separated, but since newlines can be in the tokens, it's only for looking at. The .vocab file is the tokenizer.
 
-It's very likely I will change the format of the tokenizer within the next few weeks, but if so I'll provide a way to convert the old format to the new one.
+Obviously `-capcode` and `-charset` should be the same as the values you were using previously.
