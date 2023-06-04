@@ -2,6 +2,7 @@ import unicodedata
 import os
 import requests
 import capcode
+import timeit
 
 class TokenMonster:
 
@@ -269,3 +270,37 @@ def incomplete_utf16_bytes(bytes):
     if 0xD800 <= last_two_bytes <= 0xDBFF and bytes_len < 4:
         return 2  # High surrogate without a following low surrogate
     return 0
+
+def encode_tokens(token_monster, text):
+    return token_monster.tokenize(text)
+
+def main():
+    # Load the TokenMonster vocabulary
+    token_monster = TokenMonster.load("../../english-100256-capcode.vocab")
+
+    # Text to tokenize
+    with open("alpaca_evol_instruct_70k.json", 'rb') as f:
+        text = f.read()
+
+    # Create a Timer object with setup and statement
+    timer = timeit.Timer(lambda: encode_tokens(token_monster, text))
+
+    # Perform the benchmark
+    tok = token_monster.tokenize(text)
+    elapsed_time = timer.timeit(number=1) * 1_000_000  # Convert to microseconds
+
+    decoder = token_monster.decoder()
+    after = decoder.detokenize(tok)
+    if after == text:
+        print("Same as original")
+    else:
+        print("Not same as original")
+        with open("after_py.txt", 'wb') as f:
+            f.write(after)
+
+    print(f'Number of tokens for tokenmonster : {len(tok)}')
+    print(f'Time elapsed for tokenmonster: {elapsed_time / 1000000:.3f} seconds')
+    print()
+
+if __name__ == "__main__":
+    main()

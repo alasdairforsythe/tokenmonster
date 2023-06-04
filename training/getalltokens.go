@@ -5,10 +5,16 @@ import (
 	"log"
 	"fmt"
 	"flag"
+	"bytes"
+	"strings"
 	"reflect"
 	"io/ioutil"
-	"github.com/alasdairforsythe/pansearch"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
+	uni "golang.org/x/text/encoding/unicode"
 	"github.com/AlasdairF/Custom"
+	"github.com/alasdairforsythe/pansearch"
+	"github.com/alasdairforsythe/capcode/go"
 )
 
 /*
@@ -29,9 +35,12 @@ var (
 	minOccurPerChunk int = 3
 	minOccurTotal int = 100
 	chunkSize int = 100000000
-	microChunks = 1
-	workers = 1
-	includeSingleBytes = false
+	microChunks int = 1
+	workers int = 1
+	includeSingleBytes bool = false
+	usingCapcode bool = false
+	charset string
+	charsetFlag uint8
 )
 
 type workStruct struct {
@@ -55,6 +64,56 @@ func flagRequired(name string, value interface{}) {
             os.Exit(1)
         }
     }
+}
+
+func norm_UTF8_NFD(input []byte) ([]byte, error) {
+	normalized := bytes.NewBuffer(make([]byte, 0, len(input) + (len(input) / 3) + 4))
+	normalizer := norm.NFD.Writer(normalized)
+	_, err := normalizer.Write(input)
+	if err != nil {
+		return nil, err
+	}
+	err = normalizer.Close()
+	if err != nil {
+		return nil, err
+	}
+	return normalized.Bytes(), nil
+}
+
+func norm_UTF16_NFD(input []byte) ([]byte, error) {
+	// Assume LittleEndian if not specified
+	endian := uni.LittleEndian
+	bomPolicy := uni.IgnoreBOM
+	// Check for BOM
+	if len(input) >= 2 {
+		if input[0] == 0xFE && input[1] == 0xFF {
+			endian = uni.BigEndian
+			bomPolicy = uni.ExpectBOM
+		} else if input[0] == 0xFF && input[1] == 0xFE {
+			endian = uni.LittleEndian
+			bomPolicy = uni.ExpectBOM
+		}
+	}
+	// Attempt to decode the input with decided endian
+	utf16Decoder := uni.UTF16(endian, bomPolicy)
+	// Create a transformer to decode to UTF-8 and normalize the text to NFD
+	transformer := transform.Chain(utf16Decoder.NewDecoder(), norm.NFD)
+	// Create a reader with the transformer
+	reader := transform.NewReader(bytes.NewReader(input), transformer)
+	// Read normalized NFD UTF-8 bytes
+	nfdBytes, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("Error normalizing content: %w", err)
+	}
+	// Encode normalized NFD back to UTF-16LE
+	utf16LEEncoder := uni.UTF16(uni.LittleEndian, uni.UseBOM).NewEncoder()
+	reader = transform.NewReader(bytes.NewReader(nfdBytes), utf16LEEncoder)
+	// Read UTF-16LE bytes
+	utf16LEBytes, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("Error converting content to []byte: %w", err)
+	}
+	return utf16LEBytes, nil
 }
 
 func save_tokens(filename string, data [][]byte) error {
@@ -117,29 +176,92 @@ func worker(channelWork chan workStruct, channelResult chan *pansearch.CounterBy
 
 func main() {
 	flag.StringVar(&datasetFilename, "dataset", datasetFilename, "filename of the dataset plain-text (required)")
-	flag.StringVar(&saveFilename, "output", saveFilename, "output filename for the dictionary(required)")
+	flag.StringVar(&saveFilename, "output", saveFilename, "output filename for the dictionary (required)")
+	flag.StringVar(&charset, "charset", charset, "One of: UTF-8, binary (required)")
 	flag.IntVar(&maxTokenLength, "max-token-length", maxTokenLength, "the maximum length of a token")
 	flag.IntVar(&minOccurPerChunk, "min-occur-chunk", minOccurPerChunk, "tokens will be trimmed if they occur less frequently than this per chunk")
 	flag.IntVar(&minOccurTotal, "min-occur", minOccurTotal, "tokens will be trimmed if they occur less frequently than this in the dataset")
 	flag.IntVar(&chunkSize, "chunk-size", chunkSize, "the number of bytes processed at a time, higher is faster but it means more RAM requirements")
-	flag.IntVar(&microChunks, "micro-chunks", microChunks, "The smaller this number, the slower it is but it will reduce peak memory usage")
+	flag.IntVar(&microChunks, "micro-chunks", microChunks, "The higher this number, the slower it is but it will reduce peak memory usage")
 	flag.IntVar(&workers, "workers", workers, "Multi-threading, also multiplies RAM requirements, you can't have more workers than chunks")
 	flag.BoolVar(&includeSingleBytes, "include-single-bytes", includeSingleBytes, "If you enable this single byte tokens will also be recorded (default false)")
+	flag.BoolVar(&usingCapcode, "capcode", usingCapcode, "use alternative uppercase encoding (default false)")
 	flag.Parse()
 	flagRequired("dataset", datasetFilename)
 	flagRequired("output", saveFilename)
+	flagRequired("charset", charset)
 
-	// Load the text
-	filedata, err := ioutil.ReadFile(datasetFilename)
-    if err != nil {
-		panic(err)
-    }
+	switch strings.ToLower(charset) {
+		case "utf8":
+			fallthrough
+		case "utf-8":
+			charsetFlag = 1
+			if usingCapcode {
+				fmt.Println(`Charset: UTF-8, capcode enabled`)
+			} else {
+				fmt.Println(`Charset: UTF-8, capcode disabled`)
+			}
+		case "utf16":
+			fallthrough
+		case "utf-16":
+			charsetFlag = 2
+			if usingCapcode {
+				fmt.Fprintf(os.Stderr, "capcode is currently only supported with UTF-8 encoding")
+				flag.Usage()
+				os.Exit(1)
+			}
+			fmt.Println(`Charset: UTF-16, capcode disabled`)
+		case "none":
+			fallthrough
+		case "binary":
+			charsetFlag = 0
+			if usingCapcode {
+				fmt.Fprintf(os.Stderr, "capcode is currently only supported with UTF-8 encoding")
+				flag.Usage()
+				os.Exit(1)
+			}
+			fmt.Println(`Charset: none, binary mode enabled`)
+		default:
+			fmt.Fprintf(os.Stderr, "-charset must be one of: UTF-8, binary")
+            flag.Usage()
+            os.Exit(1)
+	}
 
+	// Load the text & normalize
+	var err error
+	var filedata []byte
+	{
+		var temp []byte
+		temp, err = ioutil.ReadFile(datasetFilename)
+		if err != nil {
+			panic(err)
+		}
+		switch charsetFlag {
+			case 0: // binary
+				filedata = temp
+			case 1: // utf-8
+				if usingCapcode {
+					temp = capcode.Encode(temp)
+				}
+				filedata, err = norm_UTF8_NFD(temp)
+				if err != nil {
+					panic(err)
+				}
+			case 2:
+				filedata, err = norm_UTF16_NFD(temp)
+				if err != nil {
+					panic(err)
+				}
+		}
+	}
+
+	chunkSize += 4 - (chunkSize % 4) // ensure it's divisible by 4 to avoid splitting glyphs
 	numChunks := (len(filedata) / chunkSize)
 	if (numChunks * chunkSize) < len(filedata) {
 		numChunks++
 	}
 	microChunkSize := chunkSize / microChunks
+	microChunkSize += 4 - (microChunkSize % 4) // ensure it's divisible by 4 to avoid splitting glyphs
 
 	var i, i2, thisto int
 
@@ -209,9 +331,10 @@ func main() {
 		}
 	}
 
+	log.Println(`Tokens before trimming:`, tokens.Len())
 	log.Println(`Trimming final tokens for min`, minOccurTotal)
 	tokens.Build_With_Min(minOccurTotal)
-
+	log.Println(`Tokens after trimming:`, tokens.Len())
 	log.Println(`Saving tokens list`)
 	if err := save_tokens(saveFilename, tokens.Keys()); err != nil {
 		panic(err)

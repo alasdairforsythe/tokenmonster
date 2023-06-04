@@ -61,10 +61,11 @@ def process_all_files(output_file=None, max_size=None):
     else:
         for input_file in input_files:
             output_file = input_file.rsplit(".", 1)[0] + ".txt"
-            if input_file.endswith(".jsonl"):
-                process_jsonl_file(input_file, output_file, max_size=max_size)
-            elif input_file.endswith(".parquet"):
-                process_parquet_file(input_file, output_file, max_size=max_size)
+            with open(output_file, 'w', encoding='utf-8') as out_file:
+                if input_file.endswith(".jsonl"):
+                    process_jsonl_file(input_file, out_file, max_size=max_size)
+                elif input_file.endswith(".parquet"):
+                    process_parquet_file(input_file, out_file, max_size=max_size)
 
 
 def main():
@@ -84,12 +85,13 @@ def main():
             input_file = args.input_file
             output_file = args.output_file
             max_size = args.max
-            if input_file.endswith(".jsonl"):
-                process_jsonl_file(input_file, output_file, max_size=max_size)
-            elif input_file.endswith(".parquet"):
-                process_parquet_file(input_file, output_file, max_size=max_size)
-            else:
-                raise ValueError(f"Error: Unrecognized file format for {input_file}. Only .jsonl and .parquet files are supported.")
+            with open(output_file, 'w', encoding='utf-8') as out_file:
+                if input_file.endswith(".jsonl"):
+                    process_jsonl_file(input_file, out_file, max_size=max_size)
+                elif input_file.endswith(".parquet"):
+                    process_parquet_file(input_file, out_file, max_size=max_size)
+                else:
+                    raise ValueError(f"Error: Unrecognized file format for {input_file}. Only .jsonl and .parquet files are supported.")
     except Exception as e:
         print(str(e))
         sys.exit(1)
