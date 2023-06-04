@@ -1,9 +1,9 @@
 # TokenMonster
-
+<img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
 TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's 32000 vocabulary tokenizes 15% more efficiently than tiktoken's 100256 vocabulary. [See benchmarks](/benchmark).
 
-Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster selects the tokens that optimally represent your dataset at that vocabulary size. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. [Prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tool to train your own vocabularies & native implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
+Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster selects the tokens that optimally represent your dataset at that vocabulary size. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. [Prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & native implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
@@ -38,8 +38,8 @@ I also believe that TokenMonster vocabularies will improve the comprehension of 
 ## Prebuilt Vocabularies
 The following vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
 
-| Name            | Vocab Size | Charset | Dataset Size | Dataset Source                       | 
-|-------------------------|------------|--------------|------------------------------|
+| Name            | Vocab Size | Charset | Dataset Size | Dataset Source                     | 
+|---------------- |------------|------ |--------------|--------------------------------------|
 | english-100256  | 100256     | UTF-8 | 904 MB       | [english](#english)                  |
 | english-65536   | 65536      | UTF-8 | "            | "                                    |
 | english-50256   | 50256      | UTF-8 | "            | "                                    |
@@ -161,8 +161,7 @@ Byte-Per-Encoding starts with single byte tokens and merges frequently occuring 
 
 The secret sauce that enables TokenMonster to outperform other algorithms is made from:
 1. The distillation method is an effective means of separating that which is wanted from that which is not, without losing any of the cream.
-2. It uses my own highly-optimized algorithms, both for lookup ([pansearch](https://github.com/alasdairforsythe/pansearch)) and the ungreedy tokenization algorithm, without which it would not be feasible to test hundreds of thousands of potential vocabularies against a gigabyte of text within a reasonable timeframe.
-3. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm, which is a necessary step for optimal tokenization.
+2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm, which is a necessary step for optimal tokenization.
 
 In simplified terms it does the following:
 - Generates all possible tokens in the dataset (3 billion)
@@ -224,4 +223,4 @@ I hope this brings some attention to the importance of tokenization in natural l
 
 ☐ Optimized C++ implementation
 
-☐ Make a Python module wrapping the C implementation
+☐ Make a Python module wrapping the C++ implementation and put on PyPI
