@@ -224,4 +224,4 @@ I hope this brings some attention to the importance of tokenization in natural l
 
 ☐ Optimized C++ implementation
 
-☐ Make a Python module wrapping the C implementation
+☐ Make a Python module wrapping the C++ implementation and put on PyPI
