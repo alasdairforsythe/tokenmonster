@@ -14,7 +14,7 @@ The following tables show the number of tokens it took to tokenize each test dat
 
 Note that tokenmonster 32000-capcode tokenizes better than tiktoken's 100256 vocabulary.
 
-#### Vocab Size 50266
+#### Vocab Size 50256
 
 |                                     | the_pile       | github         | evov_instruct | total          |
 |-------------------------------------|----------------|----------------|---------------|----------------|
