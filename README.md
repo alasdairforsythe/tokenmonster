@@ -1,7 +1,7 @@
 # TokenMonster
 <img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
-TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's 32000 vocabulary tokenizes 15% more efficiently than tiktoken's 100256 vocabulary. [See benchmark](/benchmark).
+TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's 32000 vocabulary tokenizes 15% more efficiently than tiktoken's 100256 vocabulary. [See benchmark](./benchmark).
 
 Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster selects the tokens that optimally represent your dataset at that vocabulary size. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. [Prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & native implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
@@ -12,7 +12,7 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 I also believe that TokenMonster vocabularies will improve the comprehension of Large Language Models. For more details see [The Philosophy of Tokenization](#the-philosophy-of-tokenization).
 
 ## Features
-- Outperforms other tokenization algorithms ([benchmarks](#benchmarks))
+- Outperforms other tokenization algorithms ([benchmark](./benchmark))
 - Longer text generation at faster speed
 - Selects the optimal vocabulary
 - Ungreedy
