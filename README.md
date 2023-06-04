@@ -55,7 +55,7 @@ The following vocabularies are planned or have already been built. Download them
 | code-32000      | 32000      | UTF-8 | "            | "                                    |
 | code-24000      | 24000      | UTF-8 | "            | "                                    |
 
-All prebuilt vocabularies are available in 2 versions: with and without ([capcode](#capcode)). All have been generated with 256 reserved tokens for the single-bytes (with token ID the same number as their byte code).
+All prebuilt vocabularies are available in 2 versions: with and without [capcode](#capcode). All have been generated with 256 reserved tokens for the single-bytes (with token ID the same number as their byte code).
 
 The 100256 & 50256 vocab sizes are intended to be drop-in replacements for tiktoken cl100k_base & p50k_base. In tiktoken cl100k_base for example, there are 256 reserved single-byte tokens, 100,000 normal tokens, and one <eos> (end of string) token. TokenMonster's 100256 also has 256 reserved single-byte tokens, 100,000 normal tokens, and you can use the token ID 100256 as the <eos> token to make it the same structure. Tokens outside of the vocabulary range are ignored during detokenization (e.g. a token of ID 32001 on 32000 size vocabulary) so it's no issue to add "special" tokens.
 
