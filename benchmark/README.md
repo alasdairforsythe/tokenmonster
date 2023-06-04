@@ -42,8 +42,8 @@ This table gives some rough figures for average speed of the "tokenization" as r
 
 For a fair test, the benchmarks were performed on datasets that the TokenMonster vocabularies had not previously seen.
 
-"the_pile" is the test dataset from [The Pile](https://the-eye.eu/public/AI/pile/), with the text extracting using [extract_text_from_jsonl_parquet.py](/training). It represents general text. Extracted size is 1,526 MB.
+`the_pile` is the test dataset from [The Pile](https://the-eye.eu/public/AI/pile/), with the text extracting using [extract_text_from_jsonl_parquet.py](/training). It represents general text. Extracted size is 1,526 MB.
 
-"github" is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1,313 MB.
+`github` is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7 GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1,313 MB.
 
-"evov_instruct" is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
+`evov_instruct` is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
