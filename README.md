@@ -38,8 +38,8 @@ I also believe that TokenMonster vocabularies will improve the comprehension of 
 ## Prebuilt Vocabularies
 The following vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
 
-| Name            | Vocab Size | Charset | Dataset Size | Dataset Source                       | 
-|-------------------------|------------|--------------|------------------------------|
+| Name            | Vocab Size | Charset | Dataset Size | Dataset Source                     | 
+|---------------- |------------|------ |--------------|--------------------------------------|
 | english-100256  | 100256     | UTF-8 | 904 MB       | [english](#english)                  |
 | english-65536   | 65536      | UTF-8 | "            | "                                    |
 | english-50256   | 50256      | UTF-8 | "            | "                                    |
