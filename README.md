@@ -7,7 +7,7 @@ Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By selecting better tokens, text can be represented with 35% less tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 35%. The code-optimized tokenizers do even better, [see for yourself](https://bot.co/tokenmonster/).
+TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By selecting better tokens, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 35%. The code-optimized tokenizers do even better, [see for yourself](https://bot.co/tokenmonster/).
 
 I also believe that TokenMonster vocabularies will improve the comprehension of Large Language Models. For more details see [The Philosophy of Tokenization](#the-philosophy-of-tokenization).
 
