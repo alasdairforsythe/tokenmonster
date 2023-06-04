@@ -33,6 +33,10 @@ body {
   font-size: 20px;
 }
 
+#tab {
+  margin-left: 20px;
+}
+
 h1 {
   text-align: center;
   font-size: 24px;
@@ -197,7 +201,7 @@ h1 {
           let tokenStrDecoded = decoder.detokenize([tokenId]);
           
           // Replace space with HTML non-breaking space
-          const htmlTokenStr = tokenStrDecoded.replace(/[&<>"'\t ]/g, match => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;', '\t': '<tab/>', ' ': '&nbsp;'})[match]);
+          const htmlTokenStr = tokenStrDecoded.replace(/[&<>"'\t ]/g, match => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;', '\t': '<span id="tab"></span>', ' ': '&nbsp;'})[match]);
 
           outputHTML += `<span class="token token-${tokenCount % 4}">${htmlTokenStr.replace(/\n/g, `</span><br><span class="token token-${tokenCount % 4}">`)}</span>`;
           tokenCount++;
