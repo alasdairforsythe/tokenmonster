@@ -13,6 +13,14 @@ class TokenMonster:
             self.capcodeDecoder = capcode.Decoder()
 
         def detokenize(self, tokens):
+            if isinstance(tokens[0], int):
+                return self.detokenize_string(tokens)
+            elif isinstance(tokens[0], list):
+                return [self.detokenize_string(token_list) for token_list in tokens]
+            else:
+                raise ValueError("Input to detokenize must be a list of Token IDs or a list of lists of Token IDs.")
+
+        def detokenize_string(self, tokens):
             if self.parent.charset == 0: # binary
                 return self.parent.detokenize_bytes(tokens)
             # Compute total bytes needed
@@ -158,7 +166,15 @@ class TokenMonster:
 
         return tm
         
-    def tokenize(self, text):
+    def tokenize(self, texts):
+        if isinstance(texts, str) or isinstance(texts, bytes):
+            return self.tokenize_string(texts)
+        elif isinstance(texts, list):
+            return [self.tokenize_string(text) for text in texts]
+        else:
+            raise ValueError("Input to tokenize must be a string or a list of strings.")
+
+    def tokenize_string(self, text):
         if self.charset == 1:
             if isinstance(text, bytes):
                 text = text.decode('utf-8')
