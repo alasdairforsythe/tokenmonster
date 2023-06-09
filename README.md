@@ -9,6 +9,8 @@
 - Introduction of a delete token allowing for further lossless normalization
 - Fixed bug in capcode that can result in all text being uppercased
 
+All pre-built vocabularies will be regenerated with the new version.
+
 After this update, I will work on:
 - C++ implementation (+ binding for Python)
 - Full compatibility with Hugging Face library
