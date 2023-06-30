@@ -2,19 +2,16 @@
 <img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
 ***
-:loudspeaker: NOTICE V3 of TokenMonster will be released early next week:
-- Ungreedy algorithm modified to work with 3 alternative branches at a time
-- Various tweaks to improve the consistency and quality of the tokens
-- `strict-word-boundaries` (optional) parameter attempts to represent each word with only 1 token, at the cost of reduced compression
+:loudspeaker: NOTICE: [July 1st] V3 of TokenMonster is complete and will be uploaded in the next few days.
+- Major overhaul
+- 10x faster (30x faster in Python)
+- Optimization levels: clean, balanced, consistent, strict
+- New ungreedy tokenization algorithm follows 6 branches at a time
 - Introduction of a delete token allowing for further lossless normalization
 - Fixed bug in capcode that can result in all text being uppercased
+- Supports vocabulary modification, including special tokens
 
-All pre-built vocabularies will be regenerated with the new version.
-
-After this update, I will work on:
-- C++ implementation (+ binding for Python)
-- Full compatibility with Hugging Face library
-- Tool to add additional tokens to any vocabulary
+600+ pre-built vocabularies are currently being generated in the new version.
 
 ***
 
