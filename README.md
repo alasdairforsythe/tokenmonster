@@ -68,7 +68,7 @@ Examples: `fiction-24000-consistent-v1` `code-4096-clean-nocapcode-v1`
 
 All the optimization modes are lossless. The stricter the optimization mode (higher number), the more tokens will be used to tokenize the same text, but it'll be much easier for the language model to learn because the grammar is simpler. Less strict (lower number), more text can be represented with fewer tokens, but the language model will have to learn a more complicated grammar.
 
-`0 unfiltered` allows the training process to freely determine the tokens. `clean` is preferred in almost every case, because `unfiltered` tends to result in overfitting, especially for code as it results in tokens for things like `\n\t\t\t\tif (`. `unfiltered` should be used for tokenizing language or data that does not use spaces as word boundaries.
+`0 unfiltered` allows the training process to freely determine the tokens. `clean` is preferred in almost every case, because `unfiltered` tends to result in overfitting, especially for code as it results in tokens for things like `\n\t\t\t\tif (`. Use `unfiltered` for tokenizing language or data that does not use spaces as word boundaries.
 
 `1 clean` introduces filters to avoid overitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
 
