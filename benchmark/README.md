@@ -1,5 +1,9 @@
 ## Benchmarks
 
+This page consists of the benchmarks from the previous version of TokenMonster. The new version is 10x faster. I will update this page with the new benchmarks when the vocabularies have finished being trained.
+
+## Old Benchmarks
+
 The following tables show the number of tokens it took to tokenize each test dataset (fewer is better) with both tiktoken and then TokenMonster. The percentage is performance relative to tiktoken (higher is better). All the benchmarking scripts are available in the files, and links to the datasets are below.
 
 #### Vocab Size 100256

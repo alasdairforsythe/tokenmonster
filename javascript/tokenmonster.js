@@ -1,17 +1,18 @@
 class Uint8ArrayHashMap {
   constructor() {
-    this.buckets = new Array(65536);
-    for (let i = 0; i < this.buckets.length; i++) {
-      this.buckets[i] = [];
-    }
+    this.buckets = Array.from({length: 65536}, () => []);
+    this.bloom20to40 = BigInt(0);
+    this.bloom30to40 = BigInt(0);
+    this.bloom10to20 = BigInt(0);
+    this.bloom5to10 = BigInt(0);
   }
 
-  _hash(key) {
+  _hash(key, length = key.length) {
     let hash = 0;
-    for (let i = 0; i < key.length; i++) {
-      hash = (hash + key[i]) % 65536;
+    for (let i = 0; i < length; i++) {
+      hash = ((hash << 5) - hash + key[i]) | 0;
     }
-    return hash;
+    return hash & 0xFFFF;
   }
 
   _equals(a, b) {
@@ -20,6 +21,16 @@ class Uint8ArrayHashMap {
       if (a[i] !== b[i]) return false;
     }
     return true;
+  }
+
+  _addToBloom(bloomFilter, key, length) {
+    const hash = this._hash(key, length);
+    return bloomFilter | (BigInt(1) << BigInt(hash));
+  }
+
+  _checkBloom(bloomFilter, key, length) {
+    const hash = this._hash(key, length);
+    return (bloomFilter & (BigInt(1) << BigInt(hash))) === BigInt(0);
   }
 
   set(key, value) {
@@ -32,6 +43,15 @@ class Uint8ArrayHashMap {
       }
     }
     bucket.push([key, value]);
+    if (key.length > 20) {
+      this.bloom20to40 = this._addToBloom(this.bloom20to40, key, 20);
+      if (key.length > 30)
+      this.bloom30to40 = this._addToBloom(this.bloom30to40, key, 30);
+    } else if (key.length > 10) {
+      this.bloom10to20 = this._addToBloom(this.bloom10to20, key, 10);
+    } else if (key.length > 5) {
+      this.bloom5to10 = this._addToBloom(this.bloom5to10, key, 5);
+    }
   }
 
   get(key) {
@@ -44,19 +64,148 @@ class Uint8ArrayHashMap {
     }
     return -1;
   }
+
+  findLargestSubarray(arr) {
+    let len = arr.length;
+    if (len > 20) {
+      if (this._checkBloom(this.bloom20to40, arr, 20)) {
+        len = 20;
+      } else if (len > 30) {
+        if (this._checkBloom(this.bloom30to40, arr, 30)) {
+          len = 30;
+        }
+      }
+    }
+    if (len > 10 && len <= 20) {
+      if (this._checkBloom(this.bloom10to20, arr, 10)) {
+        len = 10;
+      }
+    }
+    if (len > 5 && len <= 10) {
+      if (this._checkBloom(this.bloom5to10, arr, 5)) {
+        len = 5;
+      }
+    }
+    while (len > 0) {
+      const value = this.get(arr.subarray(0, len));
+      if (value !== -1) {
+        return [value, len, true];
+      }
+      len--;
+    }
+    return [-1, 0, false];
+  }
+}
+
+function displayString1(key, capcode) {
+  const decoder = new TextDecoder('utf-8');
+  const keystr = decoder.decode(key);
+  if (capcode) {
+    const replacedString = keystr.replace(/("|\n|\r|\t| |W|D|C)/g, (match, capture) => {
+      if (capture === '"') {
+        return '&quot;';
+      } else if (capture === '\n') {
+        return '\\n';
+      } else if (capture === '\r') {
+        return '\\r';
+      } else if (capture === '\t') {
+        return '\\t';
+      } else if (capture === ' ') {
+        return '&nbsp;';
+      } else if (capture === 'W') {
+        return '\u21EA'; // caps lock symbol
+      } else if (capture === 'D') {
+        return '\u2326'; // forward delete symbol
+      } else if (capture === 'C') {
+        return '\u21E7'; // shift symbol
+      }
+    });
+    return replacedString;
+  } else {
+    const replacedString = keystr.replace(/("|\n|\r|\t| |[\x7F])/g, (match, capture) => {
+      if (capture === '"') {
+        return '&quot;';
+      } else if (capture === '\n') {
+        return '\\n';
+      } else if (capture === '\r') {
+        return '\\r';
+      } else if (capture === '\t') {
+        return '\\t';
+      } else if (capture === ' ') {
+        return '\u2007'; //'&nbsp;';
+      } else if (capture === '\x7F') {
+        return '\u2326';
+      }
+    });
+    return replacedString;
+  }
+}
+
+function displayString2(key, capcode) {
+  const decoder = new TextDecoder('utf-8');
+  const keystr = decoder.decode(key);
+  if (capcode) {
+    const replacedString = keystr.replace(/(\r\n|\n|\r|W|D|C)/g, (match, capture) => {
+      if (capture === '\r\n') {
+        return '↵\r\n';
+      } if (capture === '\n') {
+        return '↵\n';
+      } else if (capture === '\r') {
+        return '↵\r';
+      } else if (capture === 'W') {
+        return '\u21EA'; // caps lock symbol
+      } else if (capture === 'D') {
+        return '\u2326'; // forward delete symbol
+      } else if (capture === 'C') {
+        return '\u21E7'; // shift symbol
+      }
+    });
+    return replacedString;
+  } else {
+    const replacedString = keystr.replace(/(\r\n|\n|\r|[\x7F])/g, (match, capture) => {
+      if (capture === '\r\n') {
+        return '↵\r\n';
+      } if (capture === '\n') {
+        return '↵\n';
+      } else if (capture === '\r') {
+        return '↵\r';
+      } else if (capture === ' ') {
+        return '\u2007'; //'&nbsp;';
+      } else if (capture === '\x7F') {
+        return '\u2326';
+      }
+    });
+    return replacedString;
+  }
 }
 
 class TokenMonster {
   constructor() {
     this.word2id = new Uint8ArrayHashMap();
     this.id2word = [];
-    this.id2sacrifice = [];
-    this.id2sacrifice_length = [];
-    this.id2begin = [];
-    this.id2end = [];
+    this.id2alternative = [];
+    this.id2alternative_length = [];
+    this.id2alternative2 = [];
+    this.id2alternative2_length = [];
+    this.id2flag = [];
     this.max_token_len = 0;
     this.charset = 0;
     this.capcode = false;
+    this.useUnk = false;
+    this.customIDs = false;
+    this.id2nWords = [];
+    this.id2string = [];
+    this.id2display = [];
+    this.unk = 0;
+    this.hasDeleteToken = false;
+    this.deleteToken = 0;
+  }
+
+  debug(id) {
+    const decoded = new Uint8Array(this.id2word[id].length);
+    decoded.set(this.id2word[id], 0);
+    const decoder = new TextDecoder('utf-8');
+    return decoder.decode(decoded.slice(0, decoded.length));
   }
 
   Decoder() {
@@ -172,25 +321,46 @@ class TokenMonster {
         this.capcode = true;
         break;
       default:
-        throw new Error('Invalid MonsterToken vocabulary file.');
+        throw new Error('Invalid TokenMonster vocabulary file.');
     }
+
+    // Read useUnk
+    this.useUnk = (dataView.getUint8(1) === 1) ? true : false;
 
     // Read charset var
-    this.charset = dataView.getUint8(1)
+    this.charset = dataView.getUint8(2);
     if (this.charset > 2) {
-      throw new Error('Invalid MonsterToken vocabulary file.');
+      throw new Error('Invalid TokenMonster vocabulary file.');
     }
 
-    // Read the first 8 bytes as an encoded integer
-    const n = dataView.getUint8(2) | (dataView.getUint8(3) << 8) | (dataView.getUint8(4) << 16);
+    // Read customIDs var
+    switch (dataView.getUint8(5)) {
+      case 0:
+        this.customIDs = false;
+        break;
+      case 1:
+        this.customIDs = true;
+        break;
+      default:
+        throw new Error('Invalid TokenMonster vocabulary file.');
+    }
+
+    // Read 24-bit unsigned integer, this is the number of tokens in the vocabulary
+    const n = dataView.getUint8(6) | (dataView.getUint8(7) << 8) | (dataView.getUint8(8) << 16);
+    this.deleteToken = dataView.getUint8(9) | (dataView.getUint8(10) << 8) | (dataView.getUint8(11) << 16);
+    if (this.deleteToken != 16777215) {
+      this.hasDeleteToken = true;
+    }
 
     // Iterate n times
-    let offset = 5;
+    let offset = 12;
     let max_token_len = 0;
+
+    this.word2id = new Uint8ArrayHashMap(n);
+
     for (let i = 0; i < n; i++) {
       // Read 1 byte and convert it to an integer
-      const len = dataView.getUint8(offset);
-      offset += 1;
+      const len = dataView.getUint8(offset++);
 
       // Read len bytes as a string
       const key = new Uint8Array(dataView.buffer, dataView.byteOffset + offset, len);
@@ -200,47 +370,54 @@ class TokenMonster {
       // Set the key in the map to the corresponding index
       this.word2id.set(key, i);
       this.id2word[i] = key;
+      this.id2string[i] = displayString1(key, this.capcode);
+      this.id2display[i] = displayString2(key, this.capcode);
 
-      // Get the begin and end flags for this
-      switch (dataView.getUint8(offset)) {
-        case 0:
-            this.id2begin[i] = false;
-            this.id2end[i] = false;
-            break;
-        case 1:
-            this.id2begin[i] = true;
-            this.id2end[i] = false;
-            break
-        case 2:
-            this.id2begin[i] = false;
-            this.id2end[i] = true;
-            break;
-        case 3:
-            this.id2begin[i] = true;
-            this.id2end[i] = true;
-            break;
-        default:
-            throw new Error('Invalid MonsterToken vocabulary file.');
-      }
-      offset += 1;
+      this.id2flag[i] = dataView.getUint8(offset++);
+      this.id2nWords[i] = dataView.getUint8(offset++);
 
-      const sacrifice_index = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16)
-      this.id2sacrifice[i] = sacrifice_index;
-      if (sacrifice_index == 16777215) { // index 16777215 means no sacrifice
-        this.id2sacrifice_length[i] = 0;
+      const alternative_index = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16);
+      this.id2alternative[i] = alternative_index;
+      if (alternative_index == 16777215) { // index 16777215 means no alternative
+        this.id2alternative_length[i] = 0;
       } else {
-        const sac = this.id2word[sacrifice_index];
-        this.id2sacrifice_length[i] = sac.length; // save javascript length, not byte length
+        const sac = this.id2word[alternative_index];
+        this.id2alternative_length[i] = sac.length; // save javascript length, not byte length
       }
-
       offset += 3;
-    }
-    this.max_token_len = max_token_len;
 
-    // Check if there are remaining bytes in the buffer
-    if (offset < buffer.byteLength) {
-      throw new Error('Invalid MonsterToken vocabulary file.');
+      const alternative_index2 = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16)
+      this.id2alternative2[i] = alternative_index2;
+      if (alternative_index2 == 16777215) { // index 16777215 means no alternative
+        this.id2alternative2_length[i] = 0;
+      } else {
+        const sac = this.id2word[alternative_index2];
+        this.id2alternative2_length[i] = sac.length; // save javascript length, not byte length
+      }
+      offset += 7; // skip 4 bytes score
     }
+
+    // set the UNK token
+    if (this.useUnk) {
+      this.id2alternative[n] = 16777215;
+      this.id2alternative_length[n] = 0;
+      this.id2alternative2[n] = 16777215;
+      this.id2alternative2_length[n] = 0;
+      this.id2begin[n] = 0;
+      this.id2end[n] = 0;
+      this.id2word[n] = new Uint8Array([]);
+      this.id2string[i] = "<UNK>";
+      this.id2display[i] = "<UNK>";
+      this.unk = n;
+    }
+
+    // Setup beginByte
+    this.beginByte = Array(256)
+    for (var i = 0; i < 256; i++) {
+      this.beginByte[i] = dataView.getUint8(offset++);
+    }
+    // set max_token_len
+    this.max_token_len = max_token_len;
   }
 
   tokenize(text) {
@@ -282,87 +459,325 @@ class TokenMonster {
     let i = 0;
     let i2 = 0;
     let i3 = 0;
+    let i4 = 0;
     let id = 0
     let id2 = 0;
     let id3 = 0;
+    let id4 = 0;
     let len = 0;
     let len2 = 0;
     let len3 = 0;
+    let len4 = 0;
     let slen = 0;
-    let branch1 = 0;
+    let slen2 = 0;
     let branch2 = 0;
+    let branch3 = 0;
     let found = false;
     let found2 = false;
     let found3 = false;
+    let found4 = false;
+    let score1 = 0;
+    let score2 = 0;
+    let score3 = 0;
+    let alternativeid = 0;
+    let alternative2id = 0;
+    let forwardDelete = 0;
+    let score1b = 0;
+    let score2b = 0;
+    let score3b = 0;
+    let maxScore = 0;
+    let branch1b = 0;
+    let branch2b = 0;
+    let branch3b = 0;
+    let id2b = 0;
+    let id3b = 0;
+    let id4b = 0;
+    let len2b = 0;
+    let len3b = 0;
+    let len4b = 0;
+    let found2b = false;
+    let found3b = false;
+    let found4b = false;
+    let beginByte = '.';
+    let testlen = 0;
+    let nWords = 0;
+    let nWords2 = 0;
+    let flag = 0;
+    let flag2 = 0;
+    const lilbuf = new Uint8Array(this.max_token_len + this.charset);
+    lilbuf[0] = 32;
 
+    outerLoop:
     while (i < textLen) {
-      found = false;
+      [id, len, found] = this.word2id.findLargestSubarray(text.subarray(i, i + Math.min(textLen - i, this.max_token_len)));
 
-      // Check for tokens starting from the maximum token length
-      outerLoop:
-      for (len = Math.min(textLen - i, this.max_token_len); len > 0; len--) {
-
-          id = this.word2id.get(text.subarray(i, i+len));
-
-          if (id !== -1) {
-            
-            found = true;
+          if (found) {
             while (i < textLen) {
-              slen = this.id2sacrifice_length[id];
+
+              maxScore = -1000000;
+              score1 = -1000000;
+              score2 = -1000000;
+              score3 = -1000000;
+              score1b = -1000000;
+              score2b = -1000000;
+              score3b = -1000000;
+              
               i2 = i + len;
-              if (slen > 0 && i2 < textLen) {
-                found2 = false;
-                found3 = false;
-                // lookforward original
-                for (len2 = Math.min(textLen - i2, this.max_token_len); len2 > 0; len2--) {
-                  id2 = this.word2id.get(text.subarray(i2, i2+len2));
-                  if (id2 !== -1) {
-                    found2 = true;
-                    break;
-                  }
-                }
-                // lookforward alternative
-                i3 = i + slen;
-                for (len3 = Math.min(textLen - i3, this.max_token_len); len3 > 0; len3--) {
-                  id3 = this.word2id.get(text.subarray(i3, i3+len3));
-                  if (id3 !== -1) {
-                    found3 = true;
-                    break;
+              const temp1 = this.id2flag[id] & 16;
+              const temp2 = this.beginByte[text[i2]];
+              if (i2 < textLen && (temp1 == 0 || temp2 != 12)) {
+                // Look ahead from first option
+                [id2, len2, found2] = this.word2id.findLargestSubarray(text.subarray(i2, i2 + Math.min(textLen - i2, this.max_token_len)));
+                console.log("[1] " + this.debug(id) + " + " + this.debug(id2) + " (" + (len + len2) + ")");
+
+                if (found2) {
+                  // Score first option
+                  nWords = this.id2nWords[id] - forwardDelete;
+                  nWords2 = this.id2nWords[id2];
+                  flag = this.id2flag[id];
+                  flag2 = this.id2flag[id2];
+                  beginByte = this.beginByte[text[i2 + len2]];
+                  score1 = (
+                            len + len2 + (flag >> 7) + (flag2 >> 7)
+                            + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
+                            + (flag2 >> 2 & 1) + (beginByte >> 2 & 1)
+                            + ((nWords + nWords2 + (beginByte >> 3)) * 100)
+                          ) - (
+                            ((flag & 1 & (flag2 >> 1)) * 103)
+                            + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
+                            + ((flag2 & 1 & beginByte) * 3)
+                          );
+                  maxScore = score1;
+
+                  // If this is the middle of a word, try it as a word
+                  if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
+                    testlen = Math.min(textLen - i2, this.max_token_len - this.charset);
+                    lilbuf.set(text.subarray(i2, i2 + testlen), this.charset);
+                    //console.log("TEST1", new TextDecoder('utf-8').decode(lilbuf.subarray(0, testlen + this.charset)));
+                    [id2b, len2b, found2b] = this.word2id.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
+                    if (found2b && len2b > len2 + 1) {
+                      //console.log("REPLACED1", this.debug(id2), "->", this.debug(id2b));
+                      len2b -= this.charset;
+                      branch1b = len + len2b;
+                      nWords2 = this.id2nWords[id2b] - 1;
+                      flag2 = this.id2flag[id2b];
+                      beginByte = this.beginByte[text[i2 + len2b]];
+                      score1b = (
+                                branch1b + (flag >> 7) + (flag2 >> 7)
+                                + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
+                                + (beginByte >> 2 & 1)
+                                + ((nWords + nWords2 + (beginByte >> 3)) * 100)
+                              ) - (
+                                ((flag & 1) * 103)
+                                + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
+                                + ((flag2 & 1 & beginByte) * 3)
+                                + 1
+                              );
+                      maxScore = Math.max(maxScore, score1b);
+                    }
                   }
                 }
 
-                branch1 = len + len2;
-                branch2 = slen + len3;
+                alternativeid = this.id2alternative[id];
+                if (alternativeid != 16777215) {
+                  // Get alternative 1
+                  slen = this.id2alternative_length[id] - forwardDelete;
+                  i3 = i + slen;
+                  [id3, len3, found3] = this.word2id.findLargestSubarray(text.subarray(i3, i3 + Math.min(textLen - i3, this.max_token_len)));
+                  console.log("[2] " + this.debug(alternativeid) + " + " + this.debug(id3) + " (" + (slen + len3) + ")");
 
-                // Decide
-                if (branch1 > branch2 || (branch1 == branch2 && this.id2end[id] != this.id2begin[id2])) {
-                  tokens.push(id);
-                  i += len;
-                  if (!found2) {
-                    break outerLoop;
+                  if (found3) {
+                    // Score for alternative 1
+                    branch2 = slen + len3;
+                    nWords = this.id2nWords[alternativeid] - forwardDelete;
+                    nWords2 = this.id2nWords[id3];
+                    flag = this.id2flag[alternativeid];
+                    flag2 = this.id2flag[id3];
+                    beginByte = this.beginByte[text[i3 + len3]];
+                    score2 = (
+                               branch2 + (flag >> 7) + (flag2 >> 7)
+                              + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
+                              + (flag2 >> 2 & 1) + (beginByte >> 2 & 1)
+                              + ((nWords + nWords2 + (beginByte >> 3)) * 100)
+                            ) - (
+                              ((flag & 1 & (flag2 >> 1)) * 103)
+                              + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
+                              + ((flag2 & 1 & beginByte) * 3)
+                            );
+                    score2 -= (branch2 <= len) ? ((branch2 == len) ? 10000 : 100) : 0;
+                    maxScore = Math.max(maxScore, score2);
+
+                    // If this is the middle of a word, try it as a word
+                   if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
+                      testlen = Math.min(textLen - i3, this.max_token_len - this.charset);
+                      lilbuf.set(text.subarray(i3, i3 + testlen), this.charset);
+                      //console.log("TEST2", new TextDecoder('utf-8').decode(lilbuf.subarray(0, testlen + this.charset)));
+                      [id3b, len3b, found3b] = this.word2id.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
+                      if (found3b && len3b > len3 + 1) {
+                        //console.log("REPLACED2", this.debug(id3), "->", this.debug(id3b));
+                        len3b -= this.charset;
+                        branch2b = slen + len3b;
+                        nWords2 = this.id2nWords[id3b] - 1;
+                        flag2 = this.id2flag[id3b];
+                        beginByte = this.beginByte[text[i3 + len3b]];
+                        score2b = (
+                                  branch2b + (flag >> 7) + (flag2 >> 7)
+                                  + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
+                                  + (beginByte >> 2 & 1)
+                                  + ((nWords + nWords2 + (beginByte >> 3)) * 100)
+                                ) - (
+                                  ((flag & 1) * 103)
+                                  + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
+                                  + ((flag2 & 1 & beginByte) * 3)
+                                  + 1
+                                );
+                        score2b -= (branch2b <= len) ? ((branch2b == len) ? 10000 : 100) : 0;
+                        maxScore = Math.max(maxScore, score2b);
+                      }
+                    }
                   }
-                  id = id2;
-                  len = len2;
-                } else {
-                  tokens.push(this.id2sacrifice[id]);
-                  i += slen;
-                  if (!found3) {
-                    break outerLoop;
+                  
+                  // Look for alternative 2
+                  alternative2id = this.id2alternative2[id];
+                  if (alternative2id != 16777215) {
+
+                      slen2 = this.id2alternative2_length[id] - forwardDelete;
+                      i4 = i + slen2;
+                      [id4, len4, found4] = this.word2id.findLargestSubarray(text.subarray(i4, i4 + Math.min(textLen - i4, this.max_token_len)));
+                      console.log("[3] " + this.debug(alternative2id) + " + " + this.debug(id4) + " (" + (slen2 + len4) + ")");
+
+                      if (found4) {
+                        branch3 = slen2 + len4;
+                        nWords = this.id2nWords[alternative2id] - forwardDelete;
+                        nWords2 = this.id2nWords[id4];
+                        flag = this.id2flag[alternative2id];
+                        flag2 = this.id2flag[id4];
+                        beginByte = this.beginByte[text[i4 + len4]];
+                        score3 = (
+                                  branch3 + (flag >> 7) + (flag2 >> 7)
+                                  + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
+                                  + (flag2 >> 2 & 1) + (beginByte >> 2 & 1)
+                                  + ((nWords + nWords2 + (beginByte >> 3)) * 100)
+                                ) - (
+                                  ((flag & 1 & (flag2 >> 1)) * 103)
+                                  + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
+                                  + ((flag2 & 1 & beginByte) * 3)
+                                );
+                        score3 -= (branch3 <= len) ? ((branch3 == len) ? 10000 : 100) : 0;
+                        maxScore = Math.max(maxScore, score3);
+
+                        if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
+                          testlen = Math.min(textLen - i4, this.max_token_len - this.charset);
+                          lilbuf.set(text.subarray(i4, i4 + testlen), this.charset);
+                          //console.log("TEST3", new TextDecoder('utf-8').decode(lilbuf.subarray(0, testlen + this.charset)));
+                          [id4b, len4b, found4b] = this.word2id.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
+                          if (found4b && len4b > len4 + 1) {
+                            //console.log("REPLACED3", this.debug(id4), "->", this.debug(id4b));
+                            len4b -= this.charset;
+                            branch3b = slen2 + len4b;
+                            nWords2 = this.id2nWords[id4b] - 1;
+                            flag2 = this.id2flag[id4b];
+                            beginByte = this.beginByte[text[i4 + len4b]];
+                            score3b = (
+                                      branch3b + (flag >> 7) + (flag2 >> 7)
+                                      + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
+                                      + (beginByte >> 2 & 1)
+                                      + ((nWords + nWords2 + (beginByte >> 3)) * 100)
+                                    ) - (
+                                      ((flag & 1) * 103)
+                                      + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
+                                      + ((flag2 & 1 & beginByte) * 3)
+                                      + 1
+                                    );
+                            score3b -= (branch3b <= len) ? ((branch3b == len) ? 10000 : 100) : 0;
+                            maxScore = Math.max(maxScore, score3b);
+                          }
+                        }
+                    }
                   }
-                  id = id3;
-                  len = len3;
+                }
+
+                console.log("Scores", score1, score1b, score2, score2b, score3, score3b);
+                
+                switch (maxScore) {
+                    case -1000000:
+                      tokens.push(id);
+                      i += len;
+                      forwardDelete = 0;
+                      console.log("branch 0");
+                      continue outerLoop;
+                    case score1:
+                      tokens.push(id);
+                      i += len;
+                      id = id2;
+                      len = len2;
+                      forwardDelete = 0;
+                      console.log("branch 1");
+                      break;
+                    case score2:
+                      tokens.push(alternativeid);
+                      i += slen;
+                      id = id3;
+                      len = len3;
+                      forwardDelete = 0;
+                      console.log("branch 2");
+                      break;
+                    case score3:
+                      // Go with branch 3
+                      tokens.push(alternative2id);
+                      i += slen2;
+                      id = id4;
+                      len = len4;
+                      forwardDelete = 0;
+                      console.log("branch 3");
+                      break;
+                    case score1b:
+                      tokens.push(id);
+                      tokens.push(this.deleteToken);
+                      i += len;
+                      id = id2b;
+                      len = len2b;
+                      forwardDelete = 1;
+                      console.log("branch 1b");
+                      break;
+                    case score2b:
+                      tokens.push(alternativeid);
+                      tokens.push(this.deleteToken);
+                      i += slen;
+                      id = id3b;
+                      len = len3b;
+                      forwardDelete = 1;
+                      console.log("branch 2b");
+                      break;
+                    case score3b:
+                      tokens.push(alternative2id);
+                      tokens.push(this.deleteToken);
+                      i += slen2;
+                      id = id4b;
+                      len = len4b;
+                      forwardDelete = 1;
+                      console.log("branch 3b");
+                      break;
+                    default:
+                      //console.log("BRANCH ERROR!")
+                      break;
                 }
               } else {
                 tokens.push(id);
                 i += len;
-                break outerLoop;
+                forwardDelete = 0;
+                console.log("branch 1 of 1");
+                continue outerLoop;
               }
             }
+          } else {
+            //!found
+            i++;
+            forwardDelete = 0;
+            if (this.useUnk) {
+              tokens.push(this.unk);
+            }
           }
-      }
-      if (!found) {
-        i++;
-      }
     }
     return tokens;
   }
@@ -393,6 +808,7 @@ class TokenMonster {
   }
   
 }
+
 
 function incompleteUTF8Bytes(bytes) {
   let bytesLen = bytes.length;
@@ -425,10 +841,12 @@ function incompleteUTF8Bytes(bytes) {
   }
   // If sequence length is larger than the remaining bytes, it's incomplete
   if (bytesLen - seqStart < seqLen)
-      return seqLen - (bytesLen - seqStart);
+      return bytesLen - seqStart;
+  // If the sequence start byte was not the start of a multi-byte sequence, then the array is incomplete.
+  if (seqLen === 1 && (bytes[seqStart] & 0b11000000) !== 0)
+      return bytesLen;
   return 0;
 }
-
 
 function incompleteUTF16Bytes(bytes) {
   let bytesLen = bytes.length;
@@ -451,8 +869,7 @@ function incompleteUTF16Bytes(bytes) {
 
 const characterToken = 'C';
 const wordToken = 'W';
-const beginToken = 'B';
-const endToken = 'E';
+const deleteToken = 'D';
 const apostrophe = '\'';
 const apostrophe2 = '’';
 
@@ -477,218 +894,118 @@ function isModifier(r) {
 }
 
 function capcode_encode(data) {
-  let buf = new Array(Math.ceil(data.length + (data.length / 4) + 8));
+  let buf = new Array(Math.ceil(data.length + (data.length / 2) + 8));
   let pos = 0;
-  let capStartPos = 0;
-  let capEndPos = 0;
-  let secondCapStartPos = 0;
-  let lastWordCapEndPos = 0;
-  let nWords = 0;
-  let inCaps = false;
-  let singleLetter = false;
+  let gobackPos = 0;
+  let wordTokenPos = 0;
+  let rlast = '.';
+  let rlast2 = '.';
   let inWord = false;
+  let multiLetter = false;
 
   for (let r of data) {
 
-    if (inCaps) {
-      if (isLetter(r)) {
-        if (isUpper(r)) {
-          if (!inWord) {
-            inWord = true;
-            if (nWords === 0) {
-              secondCapStartPos = pos;
-            }
-            lastWordCapEndPos = capEndPos;
-            nWords++;
-          }
-          buf[pos++] = r.toLowerCase();
-          capEndPos = pos;
-          singleLetter = false;
-        } else {
-          if (singleLetter && inWord) {
-            buf[capStartPos] = characterToken;
-          } else {
-            switch (nWords) {
-              case 0:
-                if (!inWord) {
-                  buf[capStartPos] = wordToken;
-                } else {
-                  buf[capStartPos] = characterToken;
-                  for (let i2 = capStartPos + 1; i2 < capEndPos; i2++) {
-                    let r2 = buf[i2];
-                    if (isLetter(r2)) {
-                        for (let j = pos; j > i2; j--) {
-                            buf[j] = buf[j - 1];
-                        }
-                        buf[i2] = characterToken;
-                        pos++;
-                        capEndPos++;
-                        i2++;
-                    }
-                  }
-                }
-                break;
-              case 1:
-                buf[capStartPos] = wordToken;
-                if (!inWord) {
-                  buf.splice(secondCapStartPos, 0, wordToken);
-                  pos++;
-                } else {
-                  for (let i2 = secondCapStartPos; i2 < capEndPos; i2++) {
-                    let r2 = buf[i2];
-                    if (isLetter(r2)) {
-                        for (let j = pos; j > i2; j--) {
-                            buf[j] = buf[j - 1];
-                        }
-                        buf[i2] = characterToken;
-                        pos++;
-                        capEndPos++;
-                        i2++;
-                    }
-                  }
-                }
-                break;
-              case 2:
-                if (!inWord) {
-                  buf.splice(capEndPos, 0, endToken);
-                  pos++;
-                } else {
-                  buf[capStartPos] = wordToken;
-                  buf.splice(secondCapStartPos, 0, wordToken);
-                  pos++;
-                  capEndPos++;
-                  for (let i2 = lastWordCapEndPos + 1; i2 < capEndPos; i2++) {
-                    let r2 = buf[i2];
-                    if (isLetter(r2)) {
-                        for (let j = pos; j > i2; j--) {
-                            buf[j] = buf[j - 1];
-                        }
-                        buf[i2] = characterToken;
-                        pos++;
-                        capEndPos++;
-                        i2++;
-                    }
-                  }
-                }
-                break;
-              default:
-                if (!inWord) {
-                  buf.splice(capEndPos, 0, endToken);
-                  pos++;
-                } else {
-                  buf.splice(lastWordCapEndPos, 0, endToken);
-                  pos++;
-                  capEndPos++;
-                  for (let i2 = lastWordCapEndPos + 1; i2 < capEndPos; i2++) {
-                    let r2 = buf[i2];
-                    if (isLetter(r2)) {
-                        for (let j = pos; j > i2; j--) {
-                            buf[j] = buf[j - 1];
-                        }
-                        buf[i2] = characterToken;
-                        pos++;
-                        capEndPos++;
-                        i2++;
-                    }
-                  }
-                }
-            }
-          }
-          buf[pos++] = r;
-          inCaps = false;
-          capStartPos = pos;
+    if (inWord) {
+      if (isUpper(r)) {
+        if (!(isLetter(rlast) || rlast == apostrophe || rlast == apostrophe2 || isModifier(rlast))) {
+          buf[pos++] = deleteToken;
+          buf[pos++] = ' ';
         }
+        multiLetter = true;
+        buf[pos++] = r.toLowerCase();
       } else {
-        buf[pos++] = r;
-        if (isModifier(r)) {
-          capEndPos = pos
-        } else if (r !== apostrophe && r !== apostrophe2 && !isNumber(r)) {
+        if (isLower(r)) {
           inWord = false;
+          buf[wordTokenPos] = characterToken;
+          if (multiLetter) {
+            for (let i2 = gobackPos; i2 < pos; i2++) {
+              if (buf[i2] == deleteToken && buf[i2+1] == ' ') {
+                if (isLower(buf[i2 + 2])) {
+                  for (let j = pos+1; j > i2 + 2; j--) {
+                    buf[j] = buf[j - 1];
+                  }
+                  buf[i2] = deleteToken;
+                  buf[i2+1] = characterToken;
+                  buf[i2+2] = ' ';
+                  pos++;
+                  i2++
+                }
+                i2 += 2;
+              } else {
+                if (isLower(buf[i2])) {
+                  for (let j = pos+3; j > i2; j--) {
+                    buf[j] = buf[j - 3];
+                  }
+                  buf[i2] = deleteToken;
+                  buf[i2+1] = characterToken;
+                  buf[i2+2] = ' ';
+                  pos += 3;
+                  i2 += 3;
+                }
+              }
+            }
+          }
+          if (!(isLetter(rlast) || rlast == apostrophe || rlast == apostrophe2 || isModifier(rlast))) {
+            buf[pos++] = deleteToken;
+            buf[pos++] = ' ';
+          }
+        } else {
+          if (isNumber(r)) {
+            if (!isNumber(rlast)) {
+              buf[pos++] = deleteToken;
+              buf[pos++] = ' '
+            }
+          } else if (!(r == apostrophe || r == apostrophe2 || isModifier(r))) {
+            inWord = false;
+          }
         }
+        buf[pos++] = r
       }
     } else {
-      if (isUpper(r)) {
-        capStartPos = pos;
-        buf[pos++] = beginToken;
+      if (isLower(r)) {
+        if (!(rlast == ' ' || isLetter(rlast) || (isLetter(rlast2) && (rlast == apostrophe || rlast == apostrophe2)) || isModifier(rlast))) {
+          buf[pos++] = deleteToken;
+          buf[pos++] = ' ';
+        }
+        buf[pos++] = r;
+      } else if (isUpper(r)) {
+        if (rlast == ' ') {
+          wordTokenPos = pos - 1;
+          buf[wordTokenPos] = wordToken;
+          buf[pos++] = ' ';
+        } else {
+          buf[pos++] = deleteToken;
+          wordTokenPos = pos;
+          buf[pos++] = wordToken;
+          buf[pos++] = ' '
+        }
         buf[pos++] = r.toLowerCase();
-        capEndPos = pos;
-        nWords = 0;
-        inCaps = true;
+        gobackPos = pos;
+        multiLetter = false;
         inWord = true;
-        singleLetter = true;
+      } else if (isNumber(r)) {
+        if (!(rlast == ' ' || isNumber(rlast))) {
+          buf[pos++] = deleteToken;
+          buf[pos++] = ' ';
+        }
+        buf[pos++] = r;
       } else {
         buf[pos++] = r;
-        capStartPos = pos;
       }
     }
-  }
-
-  if (inCaps) {
-    switch (nWords) {
-      case 0:
-        buf[capStartPos] = wordToken;
-        break;
-      case 1:
-        buf[capStartPos] = wordToken;
-        buf.splice(secondCapStartPos, 0, wordToken);
-        pos++;
-        break;
-      default:
-        buf.splice(capEndPos, 0, endToken);
-        pos++;
-      }
+    rlast2 = rlast;
+    rlast = r;
   }
 
   return buf.slice(0, pos).join('');
 }
 
-function capcode_decode(data) {
-    let destination = "";  
-    let inCaps = false;
-    let charUp = false;
-    let wordUp = false;
-    for (let r of data) {
-        switch (r) {
-            case characterToken:
-            charUp = true;
-            break;
-            case wordToken:
-            wordUp = true;
-            break;
-            case beginToken:
-            inCaps = true;
-            break;
-            case endToken:
-            inCaps = false;
-            break;
-            default:
-                if (charUp) {
-                    destination += r.toUpperCase();
-                    charUp = false;
-                  } else if (wordUp) {
-                    if (isLetter(r)) {
-                        destination += r.toUpperCase();
-                    } else {
-                        if (!(isNumber(r) || r == apostrophe || r == apostrophe2 || isModifier(r))) {
-                            wordUp = false
-                        }
-                        destination += r;
-                    }
-                  } else if (inCaps) {
-                    destination += r.toUpperCase();
-                  } else {
-                    destination += r;
-                  }
-      }
-    }
-    return destination;
-  }
-
 class CapcodeDecoder {
     constructor() {
-      this.inCaps = false;
-      this.charUp = false;
-      this.wordUp = false;
+      this.inWord = false;
+      this.inChar = false;
+      this.delete = false;
+      this.ignore = false;
     }
   
     decode(data) {
@@ -696,37 +1013,49 @@ class CapcodeDecoder {
       for (let r of data) {
         switch (r) {
           case characterToken:
-            this.charUp = true;
-            break;
+            this.inChar = true;
+            this.inWord = false;
+            continue;
           case wordToken:
-            this.wordUp = true;
-            break;
-          case beginToken:
-            this.inCaps = true;
-            break;
-          case endToken:
-            this.inCaps = false;
+            this.inWord = true;
+            this.inChar = false;
+            this.ignore = true;
+            continue;
+          case deleteToken:
+            this.delete = true;
+            continue;
+          case ' ':
+            if (this.delete) {
+                this.delete = false;
+            } else {
+                destination += ' ';
+                if (!this.ignore) {
+                    this.inWord = false;
+                }
+            }
             break;
           default:
-            if (this.charUp) {
-              destination += r.toUpperCase();
-              this.charUp = false;
-            } else if (this.wordUp) {
-              if (isLetter(r)) {
+            if (this.delete) {
+                this.delete = false;
+            } else if (this.inChar) {
+                this.inChar = false;
                 destination += r.toUpperCase();
-              } else {
-                if (!(isNumber(r) || r == apostrophe || r == apostrophe2 || isModifier(r))) {
-                  this.wordUp = false;
+            } else if (this.inWord) {
+                if (isLower(r) || isUpper(r)) {
+                    destination += r.toUpperCase();
+                } else {
+                    destination += r;
+                    if (!(isNumber(r) || r == apostrophe || r == apostrophe2 || isModifier(r))) {
+                      this.inWord = false;
+                    }
                 }
-                destination += r;
-              }
-            } else if (this.inCaps) {
-              destination += r.toUpperCase();
             } else {
-              destination += r;
+                destination += r;
             }
         }
+        this.ignore = false;
       }
+
       return destination;
     }
-  }
+}

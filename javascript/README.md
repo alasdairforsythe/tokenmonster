@@ -16,4 +16,4 @@ const decoder = vocab.Decoder()
 const tokenStrDecoded = decoder.detokenize(tokens);
 ```
 
-The entirety of capcode.js is also included within the tokenmonster.js file. It uses only native libraries that are available in both browsers and Node.js, so it has no other dependencies. I even ended up writing a custom hashtable in there.
+The entirety of capcode.js is also included within the tokenmonster.js file. It uses only native libraries that are available in both browsers and Node.js, and it has no other dependencies. I even ended up writing a custom hashtable in there.
