@@ -193,25 +193,6 @@ I would advise then, that you can attempt to keep the vocabulary size fairly low
 
 In regards to optimization modes, `strict` is the one to go for if your model is limited by its own size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given the simpler vocabulary. On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
 
-#### Quick Guide:
-
-1. If your primary language has capital letters, use capcode. Otherwise do not use capcode.
-2. If your primary language is English or code, use prebuilt vocabularies. Otherwise train your own vocabulary from a dataset in that language.
-3. If you are targeting one primary language:
-   - If parameter count is not an issue, choose 65536 vocab size.
-   - To make a small fast model, choose 24000 vocab size.
-   - For most models choose 32000 or 40000 vocab size.
-4. If you are targeting two languages use 50256 or 65536 vocab size.
-5. If you are targeting three or more languages, use 100256 vocab size.
-
-I've spent a lot of time pouring over vocabularies of varying sizes and it's my opinion that the 100K vocab size used by OpenAI is too large, unless you intend to support multiple languages. More is not better because the model will have to learn all of those relationships. At 100K the vocabulary has "spare" tokens. I'm defining having "spare" tokens as the point at which the vocabulary begins to allocate tokens to long and specific sequences, such as (real examples) "limitations under the License" and "#### According to". This does not happen at lower vocab sizes, but it does happen at 100K vocab size in English, which implies that the optimal vocabulary has already been reached and now it's just compressing text. That does not mean that *all* words have tokens, nor should they. See [The Philosophy of Tokenization](#the-philosophy-of-tokenization) for *why* a word is or isn't tokenized.
-
-The 30-40K vocabulary size is a much better choice for keeping the parameter count of your model down, or keeping it the same but having a smarter model. If keeping the number of parameters of the model down is not a concern, 50-60K is a good size. If you want to support Traditional Chinese, 100K is your friend, but for Latin scripts something around the 40K range is preferable. Fun fact: 20K - 50K range is also the vocabulary size of a person.
-
-So if you're only using English, choose 32K vocab size if keeping the parameters low is of benefit to your model, and choose 65536 if you want to compress the text down as much as possible.
-
-My prebuilt models can be used as-is for English and code. The 100K English model does a pretty good job of tokenizating some other languages that were present in the wikipedia_sample dataset from Red Pajamas, such as French and Italian. However, if you intend your model to use another language, I would recommend to train the vocabulary from scratch on a dataset within your target language(s). It takes around 1 day to build a new vocab on an 80-Core server, so on a desktop perhaps a week.
-
 ## How does it work and how is it different from BPE?
 
 Byte-Pair-Encoding starts with single byte tokens and merges frequently occuring tokens together iteratively, growing the vocabulary out of single characters. TokenMonster takes an entirely different approach, beginning with all possible tokens, and distilling the vocabulary down to the vocab size using a method inspired by chemical distillation. TokenMonster thereby does not run into the issue BPE has, that once a branch is chosen, it's assumed to be beneficial, and although it can later be pruned, the alternative branch that might have performed better has already been lost.
