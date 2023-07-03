@@ -1,23 +1,12 @@
 # TokenMonster
-<img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
-***
-:loudspeaker: NOTICE: [July 1st] V3 of TokenMonster is complete and will be uploaded in the next few days.
-- Major overhaul
-- 10x faster (30x faster in Python)
-- Optimization levels: clean, balanced, consistent, strict
-- New ungreedy tokenization algorithm follows 6 branches at a time
-- Introduction of a delete token allowing for further lossless normalization
-- Fixed bug in capcode that can result in all text being uppercased
-- Supports vocabulary modification, including special tokens
+TokenMonster is the world's most advanced tokenization library, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
 
-600+ pre-built vocabularies are currently being generated in the new version.
+<img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
-***
+TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's smallest 24000 vocabulary consistently uses less tokens than tiktoken's largest 100256 vocabulary to tokenize the same text. [See benchmark](./benchmark).
 
-TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's smallest 24000 vocabulary consistently uses less tokens than tiktoken's largest 100256 vocabulary to tokenize the same text. Save the tokens! [See benchmark](./benchmark).
-
-Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster selects the tokens that optimally represent your dataset at that vocabulary size. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. [Prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & native implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
+TokenMonster can train and generate an optimal vocabulary on a 1GB dataset within 24 hours on a typical desktop. 600+ [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
@@ -26,14 +15,18 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 I also believe that TokenMonster vocabularies will improve the comprehension of Large Language Models. For more details see [The Philosophy of Tokenization](#the-philosophy-of-tokenization).
 
 ## Features
-- Outperforms other tokenization algorithms ([benchmark](./benchmark))
-- Longer text generation at faster speed
-- Selects the optimal vocabulary
-- Ungreedy
+- Outperforms other tokenization algorithms in every area ([benchmark](./benchmark))
+- Selects the optimal vocabulary from a raw text file
+- 5 optimization modes to choose from: `unfiltered`, `clean`, `balanced`, `consistent`, `strict`
+- Ungreedy, can score and follow 6 parallel branches faster than other algorithms can follow one
+- Faster than other tokenization algorithms ([benchmark](./benchmark))
 - Supports UTF-8, UTF-16 and binary
 - Successfully identifies words, subwords, common phrases and figures of speech by itself
 - Works with HTML tags, sequential spaces, tabs, etc. without wasting context
-- Averages 5.5 characters per token
+- Can be trained on any language
+- Can achieve 7 characters per token
+- Vocabulary files can be modified and resized even after training
+- Special tokens can be added at any time
 - No GPU needed
 
 ## Table of Contents
