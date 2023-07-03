@@ -4,7 +4,7 @@ There are 4 steps to generating a vocabulary.
 
 ### 1. Prepare your dataset
 
-To train a vocabulary, you need a dataset as a single plain text file. This dataset should represent exactly what you want to vocabulary to represent, and in the same proportions. For example, if you want the vocabulary to cover both English and French then you should ensure the dataset is 50% English and 50% French. Around 1GB is a reasonable dataset size.
+To train a vocabulary, you need a dataset as a single plain text file. This dataset should represent exactly what you want to vocabulary to represent, and in the same proportions. For example, if you want the vocabulary to cover both English and French then you should ensure the dataset is 50% English and 50% French. Around 1GB is a reasonable dataset size for a large model, or 100-200MB for a small model.
 
 ### 2. Generate tokens
 
@@ -59,7 +59,7 @@ The diversity and range of the dataset depends upon whether it's intended use is
 
 ## Generate tokens
 
-Once you have your dataset ready as a single .txt file you can generate the tokens using `getalltokens`. This process takes from a minute to an hour, depending on the dataset size and how many threads you give it. For the pre-built vocabularies, `mode=clean` took around 20 minutes, and `mode=strict` took 2 minutes.
+Once you have your dataset ready as a single .txt file you can generate the tokens using `getalltokens`. This process takes from a minute to an hour, depending on the dataset size and how many threads you give it. For the pre-built vocabularies, `-mode clean` took around 20 minutes, and `-mode strict` took 2 minutes.
 
 It's important to choose the correct settings, so I will go through them one by one.
 
@@ -95,27 +95,27 @@ Usage of ./getalltokens:
 
 ### -charset
 
-Whilst this is called `-charset` it mostly affects the normalization. In most cases you should choose `charset=utf8`. `UTF-16` is experimental and does not support capcode.
+Whilst this is called `-charset` it mostly affects the normalization. In most cases you should choose `-charset utf8`. `UTF-16` is experimental and does not support capcode.
 
-On the other hand, if you are tokenizing something that is not a language and does not use words, for example a gene sequence, choose `-charset=none`. Use `None` whenever you don't want spacing or characters to be normalized.
+On the other hand, if you are tokenizing something that is not a language and does not use words, for example a gene sequence, choose `-charset none`. Use `None` whenever you don't want spacing or characters to be normalized.
 
 ### -disable-capcode
 
-If you choose `charset=utf8` this by default enables capcode, which is an alternative encoding for upper-casing. To disable capcode pass the `-disable-capcode` flag. You would want to disable capcode if your target language does not use capital letters, or if it's a code-only model. However, even with capcode disabled, `-charset UTF-8` will still be normalized for accents, word beginnings, number beginnings and use a forward delete token. To completely disable all normalization, use `-charset none`. 
+If you choose `-charset utf8` this by default enables capcode, which is an alternative encoding for upper-casing. To disable capcode pass the `-disable-capcode` flag. You would want to disable capcode if your target language does not use capital letters, or if it's a code-only model. However, even with capcode disabled, `-charset UTF-8` will still be normalized for accents, word beginnings, number beginnings and use a forward delete token. To completely disable all normalization, use `-charset none`. 
 
 ### -mode
 
 The optimization `mode` is one of the most important parameters, as this completely changes the way your vocabulary works.
 
-`-mode=unfiltered` as described does not filter any tokens. Use this when your dataset is already clean, such as a text file that contains only gene sequences. Do not use this for natural language, and especially do not use it for code because it will result in overfitting.
+`-mode unfiltered` as described does not filter any tokens. Use this when your dataset is already clean, such as a text file that contains only gene sequences. Do not use this for natural language, and especially do not use it for code because it will result in overfitting.
 
-`-mode=clean` provides minimal normalization to avoid overfitting. Specifically, words are forced to begin with a space intead of end with one, and it restricts the amount of whitespace that can appear in a token alongside letters or numbers.
+`-mode clean` provides minimal normalization to avoid overfitting. Specifically, words are forced to begin with a space intead of end with one, and it restricts the amount of whitespace that can appear in a token alongside letters or numbers.
 
-`-mode=balanced` optimizes tokens for whole words. A token is restricted from covering one and a half words, or ending on a capcode modifier, with exceptions.
+`-mode balanced` optimizes tokens for whole words. A token is restricted from covering one and a half words, or ending on a capcode modifier, with exceptions.
 
-`-mode=consistent` at this level there are significant restrictions on combining letters, numbers, delimiters & punctuation within the same token. Some combinations are allowed, for example a word can end with a comma or a space, but in most cases these are now forced into separate tokens to enforce consistency. Unlike `clean` & `balanced`, where there can be multiple versions of a single word, such as ` then`, ` then - `, ` "then`, ` then.`, in `-mode=consistent` there will be a handful of basic variations at most. There are also restrictions on open-closers such as `([{'"` from being combined with words or numbers.
+`-mode consistent` at this level there are significant restrictions on combining letters, numbers, delimiters & punctuation within the same token. Some combinations are allowed, for example a word can end with a comma or a space, but in most cases these are now forced into separate tokens to enforce consistency. Unlike `clean` & `balanced`, where there can be multiple versions of a single word, such as ` then`, ` then - `, ` "then`, ` then.`, in `-mode=consistent` there will be a handful of basic variations at most. There are also restrictions on open-closers such as `([{'"` from being combined with words or numbers.
 
-`-mode=strict` attempts to have only 1 token for each word, however it is written. `HELLO`, `"Hello"` & `hello!` will all be tokenized with the same ` hello` token, combined with capcode and punctuation tokens. It is allowed for tokens to cover multiple words, so ` how` and ` how are you` may be separate tokens. Open-closers such as `([{'"` are restricted from being combined with other marks, with some exceptions.
+`-mode strict` attempts to have only 1 token for each word, however it is written. `HELLO`, `"Hello"` & `hello!` will all be tokenized with the same ` hello` token, combined with capcode and punctuation tokens. It is allowed for tokens to cover multiple words, so ` how` and ` how are you` may be separate tokens. Open-closers such as `([{'"` are restricted from being combined with other marks, with some exceptions.
 
 As a rule of thumb, small models should use `strict` or `consistent`, medium models should use `consistent` or `balanced`, and large models should use `balanced` or `clean`. You can view the difference between them on the [online viewer](https://bot.co/tokenmonster/).
 
@@ -125,7 +125,7 @@ The default and maximum is 40, I suggest leaving it at that, unless you have a g
 
 ### -min-occur
 
-Tokens that occur less frequently than this throughout the dataset will be deleted at the end. The default value makes it `10` if the dataset is 100MB, and `100` if the dataset is 1GB.
+Tokens that occur less frequently than this throughout the dataset will be deleted at the end. If you don't specify, it will be `10` for every 100MB of dataset size (e.g. 100 for 1GB).
 
 ### -chunk-size, -micro-chunks, -min-occur-chunk, -min-occur-micro-chunk
 
@@ -133,15 +133,15 @@ When running `getalltokens` there is a tradeoff between speed, RAM and the pruni
 
 `-chunk-size` is the number of bytes that are processed before the tokens are pruned for minimum frequency of `min-occur-chunk`. Then within each chunk, the tokens are sorted and pruned  `-micro-chunks` number of times, each time with tokens occurring less often than `-min-occur-micro-chunk` being deleted.
 
-The default settings of `-chunk-size 100MB -micro-chunks 5` is unlikely to use more than 8 - 16 GB of RAM, depending on the optimization mode (lower optimization mode uses more RAM). If you find yourself swapping, a little is okay, but if it's too much then kill the process and run it again with `-micro-chunks 10`.
+The default settings of `-chunk-size 100MB -micro-chunks 5` is unlikely to use more than 8 - 16 GB of RAM, depending on the optimization mode (`unfiltered` & `clean` use more RAM because there are more tokens). If you find the RAM swapping a little it's okay, but if it's too much then kill the process and run it again with `-micro-chunks 10`.
 
-If `-micro-chunks 10` is still using too much RAM, you can use `-chunk-size 10MB -min-occur-chunk 2 -micro-chunks 10 -min-occur-micro-chunk 1` which should use very little RAM.
+If `-micro-chunks 10` is still using too much RAM, you can use `-chunk-size 10MB -min-occur-chunk 2 -micro-chunks 10 -min-occur-micro-chunk 1` which should use very little RAM but take a lot longer.
 
 ### -min-occur-byte
 
-This is how many times an individual byte must occur before it gets given a token. By default this is the same as `min-occur`, but if you know your dataset is clean you might want to set it to `1` so that all individual bytes that occur will have a token that covers them. Or you might want to set it to `3` so that individual bytes that can occur have tokens, but a little bit of corrupt data in the dataset won't result in tokens being allocated.
+This is how many times an individual byte must occur before it's allocated a token. By default this is the same as `min-occur`, but if you know your dataset is clean you might want to set it to `1` so that all individual bytes that occur will have a token that covers them. Or you might want to set it to `3` so that individual bytes that can occur have tokens, but a little bit of corrupt data in the dataset won't result in tokens being allocated.
 
-Byte tokens are different to regular tokens in that they're not filtered out of the vocabulary. Single byte tokens you count here will most likely end up in your final vocabulary, although you can specifically exclude them at the next stage.
+Single-byte tokens are different to regular tokens in that they're not filtered out of the vocabulary. Single-byte tokens you count here will most likely end up in your final vocabulary, unless you can specifically exclude them at the next stage.
 
 ### -workers
 
@@ -149,7 +149,7 @@ This is the number of threads used. More is faster, give it as many as you have 
 
 ## Train vocabulary
 
-This is the main stage of vocabulary generation. Unlike `getalltokens` this process uses very little RAM, but it does take a long time. On 8 threads, it'll take between 12-24 hours to generate a final vocabulary. There is a `-fast` option that will produce a lower-quality vocabulary in about an hour, which is intended for testing the viability of a vocabulary before doing the full training.
+`trainvocab` trains the vocabulary on the tokens produced by `getalltokens`. Unlike `getalltokens` this process uses very little RAM, but it does take a long time. On 8 threads, it'll take between 12-24 hours to generate a final vocabulary. There is a `-fast` option that will produce a slightly less optimal vocabulary in about an hour, which is intended for testing the viability of a vocabulary before doing the full training.
 
 ```
 Usage of ./trainvocab:
@@ -189,29 +189,29 @@ Usage of ./trainvocab:
         number of worker threads to run, excluding main thread
 ```
 
-`-dataset` is the dataset. `-dictionary` is the tokens file from `getalltokens`. `-dir` is the output directory. `-vocab-size` is your target vocabulary size. `-workers` is the number of threads to run (best to set it to 1 less than the number of CPU threads you have.)
+`-dataset` is the dataset. `-dictionary` is the tokens file from `getalltokens`. `-dir` is the output directory (many intermediary files are created). `-vocab-size` is your target vocabulary size. `-workers` is the number of threads to run (best to set it to 1 less than the number of CPU threads.)
 
 Before running `trainvocab` you first need to decide on the parameters for what to do with single-byte tokens. Those are tokens for individual bytes, such standard English characters that are represented with ASCII, and starting or continuation bytes of multi-byte sequences in UTF-8.
 
-Unlike regular tokens, all single-byte tokens are included in every vocabulary. In total there are 256 possible single-byte tokens. So for large vocabularies it's common to include all of them. This ensures that any data can be tokenized with the vocabulary, even binary data. However, that's a bit wasteful for smaller vocabularies, especially for specialized models where you know that some of those bytes will never be used by the model.
+Unlike regular tokens, all single-byte tokens are included in every vocabulary. In total there are 256 possible single-byte tokens. So for large vocabularies it's common to include all of them. This ensures that any data can be tokenized with the vocabulary, even binary data. However, that's a bit wasteful for smaller vocabularies, especially for specialized models or models that only generate ASCII text.
 
-`-include-256-bytes` reserves 256 tokens for all possible single bytes.
+`-include-256-bytes` includes 256 tokens for all possible single bytes.
 
 `-include-128-bytes` includes the full set of 128 ASCII character codes, including control characters.
 
 `-include-ascii-bytes` includes all printable ASCII characters, as well as `\r\n\t` (newlines and tabs), but none of the control characters. This is what you want for small models that are only trained on English text.
 
-`-include-utf8-bytes` gives a token for every byte that could make up any part of a valid UTF-8 character sequence.
+`-include-utf8-bytes` gives a token for every byte that could make up any part of a valid UTF-8 character sequence. This is what you want if your model only generates UTF-8 text.
 
 `-include-missing-bytes` dynamically adds tokens for all bytes discovered during training that don't already have tokens.
 
-`-exclude-other-bytes` instructs `trainvocab` to ignore single-byte token from the tokens file generated by `getalltokens`.
+`-exclude-other-bytes` instructs `trainvocab` to ignore single-byte token from the tokens file generated by `getalltokens`. This is useful to include along with any of the above if your dataset is not clean, to ensure tokens are not allocated to characters that are not supposed to be there (for example, some UTF-8 characters within a dataset that's meant to be only ASCII.)
 
-For the prebuilt vocabularies, I mostly used `-include-256-bytes` for 50256, 65536 & 100256 sizes. I used `-include-utf8-bytes -exclude-other-bytes` for most of the others, and 8000 and less vocabulary size I used `-include-ascii-bytes -exclude-other-bytes`.
+For the prebuilt vocabularies, I used `-include-256-bytes` for `50256`, `65536` & `100256` vocab sizes. I used `-include-utf8-bytes -exclude-other-bytes` for most of the others, and for `8000` and less vocabulary size I used `-include-ascii-bytes -exclude-other-bytes`.
 
 When `trainvocab` has finished, there will be hundreds of files in the `-dir` output directory. The one you want is the alphabetically first file, as this is the list of vocab-size tokens that tokenized the dataset with the least number of tokens. Once you've exported this as a vocabulary, you can delete this directory. The other files that begin with numbers are all the other vocabularies that were within 1% of the best vocabulary, and the other files are intermediary files that can be used to resume the training from any of those intermediary points.
 
-Note that the file format of the tokens files in the output directory is the same format as the tokens generated by `getalltokens`. As such, you can use any of the output files from `trainvocab` as the input `-dictionary` for `trainvocab`. For example, you could use the final tokens from a 50,000 size vocabulary as the input dictionary for training a 10,000 size vocabulary. Doing so is not recommended because the optimal 10,000 tokens is not necessarily a subset of the optimal 50,000 tokens, but if you're in a hurry, you can do it.
+Note that the file format of the tokens files in the output directory is the same format as the tokens generated by `getalltokens`. As such, you can use any of the files in the output directory as the input `-dictionary` for `trainvocab`. For example, you could use the final tokens from a 50,000 size vocabulary as the input dictionary for training a 10,000 size vocabulary. Doing so is not recommended because the optimal 10,000 tokens is not necessarily a subset of the optimal 50,000 tokens, but if you're in a hurry, you can do it.
 
 ### -special
 
