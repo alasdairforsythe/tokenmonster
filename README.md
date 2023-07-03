@@ -4,7 +4,7 @@ TokenMonster is a highly optimized, state-of-the-art tokenization library, enabl
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
-TokenMonster is an ungreedy tokenizer and vocabulary builder, built from the ground up using custom data structures and branchless logic.
+TokenMonster is an ungreedy tokenizer and vocabulary generator, built from the ground up using custom data structures and branchless logic.
 
 TokenMonster can train and generate an optimal vocabulary on a 1GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
@@ -41,7 +41,7 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 * [Which Vocabulary To Choose](#which-vocabulary-to-choose)
 * [How does it work and how is it different from BPE?](#how-does-it-work-and-how-is-it-different-from-bpe)
 * [The Ungreedy Tokenization Algorithm](#the-ungreedy-tokenization-algorithm)
-
+* [Support & Consultation](#support--consultation)
 
 ## Prebuilt Vocabularies
 
@@ -63,7 +63,6 @@ And finally add the version number:
 `v1`
 
 Examples: `fiction-24000-consistent-v1` `code-4096-clean-nocapcode-v1`
-
 
 ## Optimization Modes
 
@@ -237,6 +236,8 @@ TokenMonster uses an ungreedy tokenization method in which each token has up to 
 
 Because the training process targets the tokenization algorithm, the training is not only selecting for tokens but selecting for the relationship between tokens in the vocabulary.
 
-## Advice & Consultation
+## Support & Consultation
 
 Use the "Discussions" tab for free support on how to use TokenMonster. You can also hire me for a paid consultation on how to get the best out of TokenMonster, or to generate a vocabulary for you according to your specific requirements.
+
+.
