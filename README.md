@@ -6,7 +6,7 @@ TokenMonster is the world's most advanced tokenization library, enabling languag
 
 TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's smallest 24000 vocabulary consistently uses less tokens than tiktoken's largest 100256 vocabulary to tokenize the same text. [See benchmark](./benchmark).
 
-TokenMonster can train and generate an optimal vocabulary on a 1GB dataset within 24 hours on a typical desktop. 600+ [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
+TokenMonster can train and generate an optimal vocabulary on a 1GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
@@ -45,33 +45,37 @@ I also believe that TokenMonster vocabularies will improve the comprehension of 
 
 
 ## Prebuilt Vocabularies
-The following vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
+440 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
 
-| Name            | Vocab Size | Charset | Dataset Size | Dataset Source                     | 
-|---------------- |------------|------ |--------------|--------------------------------------|
-| english-100256  | 100256     | UTF-8 | 904 MB       | [english](#english)                  |
-| english-65536   | 65536      | UTF-8 | "            | "                                    |
-| english-50256   | 50256      | UTF-8 | "            | "                                    |
-| english-40000   | 40000      | UTF-8 | "            | "                                    |
-| english-32000   | 32000      | UTF-8 | "            | "                                    |
-| english-24000   | 24000      | UTF-8 | "            | "                                    |
-| code-100256     | 100256     | UTF-8 | 577 MB       | [code](#code)                        |
-| code-65536      | 65536      | UTF-8 | "            | "                                    |
-| code-50256      | 50256      | UTF-8 | "            | "                                    |
-| code-40000      | 40000      | UTF-8 | "            | "                                    |
-| code-32000      | 32000      | UTF-8 | "            | "                                    |
-| code-24000      | 24000      | UTF-8 | "            | "                                    |
+Choose a dataset from:
+`code` `english` `englishcode` `fiction`
 
-All prebuilt vocabularies are available in 2 versions: with and without [capcode](#capcode). All have been generated with 256 reserved tokens for the single-bytes (with token ID the same number as their byte code).
+Choose a vocab size from:
+`1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
 
-The 100256 & 50256 vocab sizes are intended to be drop-in replacements for tiktoken cl100k_base & p50k_base. In tiktoken cl100k_base for example, there are 256 reserved single-byte tokens, 100,000 normal tokens, and one `<eos>` (end of string) token. TokenMonster's 100256 also has 256 reserved single-byte tokens, 100,000 normal tokens, and you can use the token ID 100256 as the `<eos>` token to make it the same structure. Tokens outside of the vocabulary range are ignored during detokenization (e.g. a token of ID 32001 on 32000 size vocabulary) so it's no issue to add "special" tokens.
+Choose an [optimization mode](training#-mode) from:
+`unfiltered` `clean` `balanced` `consistent` `strict`
+
+For a capcode disabled vocabulary add:
+`nocapcode`
+
+And finally add the version number:
+`v1`
+
+Examoles: `fiction-24000-consistent-v1` `code-4096-clean-nocapcode-v1`
+
 
 ## Datasets
+
+The datasets used for generating the prebuilt vocabularies are all available on [Hugging Face](https://huggingface.co/datasets/alasdairforsythe/text-english-code-fiction-nonfiction). The sources and scripts used to generate these datasets are included in the training directory.
 
 The training data mostly came from Red Pajamas [1B Token Sample](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T-Sample). However, to reduce formal English and emphasize other languages, informal writing and code, c4_sample & cc_sample were cropped to 100MB, and [Reddit conversations](https://huggingface.co/datasets/SophieTr/reddit_clean) data were added (also cropped to 100MB.)
 
 Additionally, equally weighted code samples of 2MB per language (code_2mb) and 10MB per language (code_10mb) were added for 30 different programming languages to ensure all programming languages have representation. The source of this is [codeparrot/github-code](https://huggingface.co/datasets/codeparrot/github-code). To ensure a range of coding styles, I allowed only 1 file per GitHub repository, and per file a maximum of 200 lines selected from the middle of the file.
-The sources and scripts used to generate these datasets are included in the training directory.
+
+Given the evolving nature of writing styles, I felt that book_sample.txt, which consists of out-of-copyright books, was not a good representation of contemporary fiction. To better represent a more modern style, I curated fiction.txt and fiction_100mb.txt by throwing together a few other datasets and cleaning it up.
+
+Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset of code_10mb.txt.
 
 #### english
 
@@ -81,12 +85,36 @@ The sources and scripts used to generate these datasets are included in the trai
 | book_sample.txt          | 108,069,616 |
 | c4_sample.txt            | 100,560,318 |
 | cc_2023-06_sample.txt    | 100,852,231 |
+| fiction_100mb.txt        | 94,235,489  |
+| stackexchange_sample.txt | 71,940,138  |
+| wikipedia_sample.txt     | 79,181,873  |
+| reddit.txt               | 100,027,565 |
+|                          | **743,792,799** |
+
+#### englishcode
+
+| Filename                 | Filesize  |
+|--------------------------|-----------|
+| arxiv_sample.txt         | 88,925,569  |
+| book_sample.txt          | 108,069,616 |
+| c4_sample.txt            | 100,560,318 |
+| cc_2023-06_sample.txt    | 100,852,231 |
 | code_2mb.txt             | 62,895,904  |
+| fiction_100mb.txt        | 94,235,489  |
 | github_sample.txt        | 191,123,094 |
 | stackexchange_sample.txt | 71,940,138  |
 | wikipedia_sample.txt     | 79,181,873  |
 | reddit.txt               | 100,027,565 |
-|                          | **903,576,308** |
+|                          | **997,811,797** |
+
+#### fiction
+
+| Filename                 | Filesize  |
+|--------------------------|-----------|
+| book_sample.txt          | 108,069,616 |
+| fiction.txt              | 357,119,086  |
+| reddit.txt               | 100,027,565 |
+|                          | **565,216,267** |
 
 #### code
 
@@ -97,7 +125,7 @@ The sources and scripts used to generate these datasets are included in the trai
 | stackexchange_sample.txt | 71,940,138  |
 |                          | **577,070,031** |
 
-The following programming and markup languages are represented in both "english" and "code" vocabularies:
+The following programming and markup languages are represented in both "englishcode" and "code" vocabularies:
 1. Assembly
 2. Batchfile
 3. C
@@ -131,15 +159,13 @@ The following programming and markup languages are represented in both "english"
 
 ## Capcode
 
-[Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. On English text, using capcode offers a small performance benefit (around 2% less tokens), long sequences of capitals can be tokenized without using many tokens, and it enables the model to more easily learn the connection between lowercase and uppercased words. This advantage is much less pronounced on code because lowercase and uppercase have a distinct meaning to one another in code. I would recommend to use capcode if you are tokenizing a language that regularly uses capital letters (such as English) and not use capcode if you are tokenizing a language without capitals (such as Chinese) or code. If you are tokenizing a mix of English and code, or English and Chinese, using capcode will likely be beneficial. You can test it [here](https://bot.co/tokenmonster/) when making your decision.
-
-You enable capcode when creating a vocabulary by passing the `-capcode` flag. The rest is taken care of for you, including during tokenization and detokenization. Currently capcode is supported only with UTF-8.
+[Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text, supporting all UTF-8 characters. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. In theory, capcode makes it easier for a model to learn the meaning of words. Additionally, capcode makes for more efficient tokenization because it frees up so many tokens that would otherwise be used for uppercase variants of already existing lowercase tokens.
 
 ## Normalization
 
 TokenMonster is designed to be plug-and-play, taking care of normalization concerns for you. UTF-8 and UTF-16 vocabularies are automatically NFD normalized and encoded Little Endian regardless of architecture. When tokenizing, the exact same transformations are applied transparently, so you can pass a string to either UTF-8 or UTF-16 vocabularies, with or without capcode, and on either Little or Big Endian architecture, and it will be processed correctly.
 
-No normalizations are applied to "binary" charset vocabularies.
+No normalizations are applied to charset "None" vocabularies.
 
 If you're not sure which to choose, UTF-8 is preferred.
 
