@@ -2965,31 +2965,35 @@ func (vocab *Vocab) PrivateGenerateVocab(tokens [][]byte, scores []float32, addT
 				beginByte[token[0]][3]++
 			}
 			// Count words in token
-			if (r == ' ' || isLetter(r, usingCapcode)) && isLetter(r2, usingCapcode) {
-				onlyLetterSpace = true
-			} else if (r == ' ' || unicode.IsNumber(r)) && unicode.IsNumber(r2) {
-				onlyNumberSpace = true
-			} else if !isAlphaNum(r, usingCapcode) && !isAlphaNum(r2, usingCapcode) {
+			if len(token) == 1 {
 				onlyPunc = true
-			}
-			for i := n + n2; i < len(token); i += n2 {
-				r = r2
-				n = n2
-				r2, n2 = decodeRune(token[i:], charset)
-				if r == ' ' && isAlphaNum(r2, usingCapcode) {
-					nWords++
+			} else {
+				if (r == ' ' || isLetter(r, usingCapcode)) && isLetter(r2, usingCapcode) {
+					onlyLetterSpace = true
+				} else if (r == ' ' || unicode.IsNumber(r)) && unicode.IsNumber(r2) {
+					onlyNumberSpace = true
+				} else if !isAlphaNum(r, usingCapcode) && !isAlphaNum(r2, usingCapcode) {
+					onlyPunc = true
 				}
-				if isLetter(r2, usingCapcode) {
-					onlyPunc = false
-					onlyNumberSpace = false
-				} else if unicode.IsNumber(r2) {
-					onlyPunc = false
-					onlyLetterSpace = false
-				} else if r2 != ' ' {
-					onlyLetterSpace = false
-					onlyNumberSpace = false
+				for i := n + n2; i < len(token); i += n2 {
+					r = r2
+					n = n2
+					r2, n2 = decodeRune(token[i:], charset)
+					if r == ' ' && isAlphaNum(r2, usingCapcode) {
+						nWords++
+					}
+					if isLetter(r2, usingCapcode) {
+						onlyPunc = false
+						onlyNumberSpace = false
+					} else if unicode.IsNumber(r2) {
+						onlyPunc = false
+						onlyLetterSpace = false
+					} else if r2 != ' ' {
+						onlyLetterSpace = false
+						onlyNumberSpace = false
+					}
 				}
-			}			
+			}	
 			tokenData.alt.data.nWords = nWords
 			// Now do some precalculations concerning the token
 			r = decodeLastRune(token, charset)

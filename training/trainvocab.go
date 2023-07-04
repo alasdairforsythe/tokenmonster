@@ -552,29 +552,33 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 					charTable[token[0]][3]++
 				}
 				// Count words in token
-				if (r == ' ' || isLetter(r)) && isLetter(r2) {
-					onlyLetterSpace = true
-				} else if (r == ' ' || unicode.IsNumber(r)) && unicode.IsNumber(r2) {
-					onlyNumberSpace = true
-				} else if !isAlphaNum(r) && !isAlphaNum(r2) {
+				if len(token) == 1 {
 					onlyPunc = true
-				}
-				for i = n + n2; i < len(token); i += n2 {
-					r = r2
-					n = n2
-					r2, n2 = decodeRune(token[i:])
-					if r == ' ' && isAlphaNum(r2) {
-						nWords++
+				} else {
+					if (r == ' ' || isLetter(r)) && isLetter(r2) {
+						onlyLetterSpace = true
+					} else if (r == ' ' || unicode.IsNumber(r)) && unicode.IsNumber(r2) {
+						onlyNumberSpace = true
+					} else if !isAlphaNum(r) && !isAlphaNum(r2) {
+						onlyPunc = true
 					}
-					if isLetter(r2) {
-						onlyPunc = false
-						onlyNumberSpace = false
-					} else if unicode.IsNumber(r2) {
-						onlyPunc = false
-						onlyLetterSpace = false
-					} else if r2 != ' ' {
-						onlyLetterSpace = false
-						onlyNumberSpace = false
+					for i = n + n2; i < len(token); i += n2 {
+						r = r2
+						n = n2
+						r2, n2 = decodeRune(token[i:])
+						if r == ' ' && isAlphaNum(r2) {
+							nWords++
+						}
+						if isLetter(r2) {
+							onlyPunc = false
+							onlyNumberSpace = false
+						} else if unicode.IsNumber(r2) {
+							onlyPunc = false
+							onlyLetterSpace = false
+						} else if r2 != ' ' {
+							onlyLetterSpace = false
+							onlyNumberSpace = false
+						}
 					}
 				}
 				tokenData.alt.data.nWords = nWords
