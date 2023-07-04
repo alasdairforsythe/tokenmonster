@@ -28,7 +28,7 @@ class TokenMonster:
 
         Usage:
             vocab = TokenMonster("english-32000-balanced-v1")
-            decoder = vocab.Decoder()
+            decoder = vocab.decoder()
             decoded_string = decoder.decode(tokens)
             decoded_string += decoder.decode(more_tokens)
         """
@@ -169,13 +169,13 @@ class TokenMonster:
     
     def charset(self):
         """
-        Returns one of "UTF-8", "UTF-16", or "Binary"
+        Returns one of "UTF-8", "UTF-16", or "None"
         """
         if self.charset == 1:
             return "UTF-8"
         elif self.charset == 2:
             return "UTF-16"
-        return "Binary"
+        return "None"
     
     def decode(self, tokens):
         """
@@ -332,7 +332,7 @@ class TokenMonster:
             list of dictionaries where the index is the token ID and each is a dictionary of:
                 token (string): the token including capcode encoding
                 token_decoded (string): the same token decoded from it's capcode form
-                type (int): the type of token (0 = regular, 1 = byte, 2 = special)
+                type (int): the type of token (0 = regular, 1 = byte, 2 = special, 3 = UNK)
                 score (float): token's representation in the dataset used to train the vocabulary
 
         Usage:
@@ -579,14 +579,14 @@ class TokenMonster:
         """
         return self.modify(token, None, None, 0)
     
-    def resize(self, val):
+    def resize(self, size):
         """
         Changes the size of the vocabulary. This also changes the token IDs. See "modify".
 
         A vocabulary can be enlarged as well reduced in size. Only the worst performing
         tokens are removed when reducing.
         """
-        return self.modify(None, None, None, val)
+        return self.modify(None, None, None, size)
     
     def enable_unk_token(self):
         """

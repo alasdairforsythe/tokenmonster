@@ -2139,7 +2139,7 @@ func (vocab *Vocab) Tokens() [][]byte {
 // Token is the token still encoded with capcode.
 // TokenDecoded is the decoded form of the token, however the token can be modified by a previous token in a sequence so this cannot be used for decoding.
 // Type is 0 for regular tokens, 1 for character tokens, and 3 for special tokens.
-// The Score is the percentage of the training dataset that this token covered and be used for sorting the tokens by their importance.
+// The Score is the percentage of the training dataset that this token covered and is used for sorting the tokens by their importance.
 type Info struct {
 	Token []byte
 	TokenDecoded []byte
