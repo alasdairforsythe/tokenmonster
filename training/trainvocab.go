@@ -1337,6 +1337,7 @@ func main() {
 		}
 		specialTokens = specialTokens[0:on]
 		hasSpecial = true
+		specialMap = make(map[string]bool)
 	}
 
 	switch charsetFlag {
