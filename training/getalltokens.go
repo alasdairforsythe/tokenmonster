@@ -1,7 +1,7 @@
 package main
 
 /*
-	Filter testing: https://goplay.tools/snippet/a0iuvwvgL-n
+	Filter testing: https://goplay.tools/snippet/EGaohLGHbFn
 */
 
 import (
@@ -461,10 +461,9 @@ func filterClean(tok []byte) ([]byte, bool) {
 		}
 	}
 	// If it contains letters or numbers or capcode it may not end with a space
-	if (hasAlpha || hasCapcode || exists || (other && isAlphaNum(rnext))) && r == ' ' && !removed {
+	if charsetFlag != 0 && ((hasAlpha || hasCapcode || exists || (other && isAlphaNum(rnext))) && r == ' ' && !removed) {
 		return trimmed, false
 	}
-	// If it contains letters and spaces, except the first space, if may not
 	return trimmed, true
 }
 
@@ -537,7 +536,7 @@ func filterBalanced(tok []byte) ([]byte, bool) {
 			return tok, false
 		}
 	}
-	// If it contains letters or numbers, don't end on capcode wordToken or CharacterToken unless preceded by a .
+	// If it contains letters or numbers, don't end on capcode wordToken or CharacterToken unless preceded by .
 	if hasAlpha && usingCapcode && isCapcode(r) {
 		if len(tok) < 3 {
 			return tok, false
@@ -547,11 +546,11 @@ func filterBalanced(tok []byte) ([]byte, bool) {
 		}
 	}
 	// If it contains letters or numbers or capcode it may not end with any kind of space
-	if (hasAlpha || hasCapcode) && unicode.IsSpace(r) {
+	if charsetFlag != 0 && ((hasAlpha || hasCapcode) && unicode.IsSpace(r)) {
 		return tok, false
 	}
 	// If it contains punctuation it may not end with a space
-	if (other || exists) && r == ' ' {
+	if charsetFlag != 0 && (other || exists) && r == ' ' {
 		return tok, false
 	}
 	// Don't do a full word, then half of the next word
@@ -594,13 +593,6 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 		}
 	}
 
-	// Doubles of anything are allowed
-	if len(tok) == 2 {
-		if r1 == r2 {
-			return trimmed, true
-		}
-	}
-
 	// Setup for allowing capcode marker beginnings
 	if isCapcode(r1) && (isCapcode(r2) || r2 == ' ') {
 		if r2 == ' ' {
@@ -631,7 +623,7 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 		tok = stripLastPunc(tok)
 		for i := n1 + n2; i < len(tok); i += n3 {
 			r3, n3 = decodeRune(tok[i:])
-			if isLetter(r3) {
+			if isLetter(r3) || unicode.IsNumber(r3) {
 				space = false
 				apos = false
 				hyphenok = 0
@@ -656,7 +648,7 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 					}
 					space = false
 					apos = false
-					if r3 == '-' || r3 == '.' {
+					if r3 == '-' || r3 == '.' || r3 == '_' {
 						if hyphenok == 0 {
 							hyphenok = 1
 							continue
@@ -664,11 +656,11 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 					} else if isCapcode(r3) {
 						if hyphenok == 1 {
 							hyphenok = 2
-							continue
+
 						} else if hyphenok == 2 {
 							hyphenok = 3
-							continue
 						}
+						continue
 					}
 					return trimmed, false
 				}
@@ -775,17 +767,17 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 	if maxSpacesRun > 1 && (numDelim != 0 || numCapcode != 0 || numOther != 0) && ((numSpace != numNewline || (numOther+numDelim) > 3) || nSpaceRuns > 1) {
 		return trimmed, false
 	}
-	otherAndSpace := numOther + numSpace + numCapcode
-	if (numDelim > 1 && len(tok) > 2) || (numDelim > 0 && openCloseStripped) { // 2 delimiters are not allowed (with above exceptions)
+	if numDelim > 1 || (numDelim > 0 && openCloseStripped) {
 		return trimmed, false
 	}
+	otherAndSpace := numOther + numSpace + numCapcode
 	if numDelim == 1 {
 		if isDelimiter(r1) {
 			if len(tok) <= 3 && numSpace <= 1 {
 				return trimmed, true
 			}
 		} else {
-			if (otherAndSpace <= 1) || (len(tok) == 3 && (r1 == ' ' || r2 == ' ')) {
+			if (otherAndSpace <= 1) || (len(tok) == 3 && (r1 == ' ' || r2 == ' ')) || r1 == '\t' {
 				return trimmed, true // a delimiter may be preceded by 1 punctuation or space
 			}
 		}
@@ -962,7 +954,7 @@ func filterStrict(tok []byte) ([]byte, bool) {
 		if otherAndSpace == 0 || (otherAndSpace-numCapcode == 1 && r1 == ' ') {
 			return trimmed, true // a delimiter may be combined with capcode markers
 		}
-		if otherAndSpace == 1 && unicode.IsSpace(r1) {
+		if otherAndSpace == 1 && unicode.IsSpace(r1) && r1 != '\t' {
 			return trimmed, true // a delimiter may be preceded by 1 space
 		}
 		return trimmed, false // anything else is not okay
@@ -1622,6 +1614,10 @@ func main() {
 		default:
 			fmt.Fprintf(os.Stderr, "mode must be one of: unfiltered, balanced, consistent, strict, all\n")
 			os.Exit(1)
+	}
+	if level >= 3 && charsetFlag != 1 {
+		fmt.Fprintf(os.Stderr, "EXITING: Optimization modes 'consistent' and 'strict' are only available with -charset UTF8\n")
+		os.Exit(1)
 	}
 
 	// Load the text & normalize

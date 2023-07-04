@@ -114,7 +114,7 @@ func main() {
 	flag.StringVar(&textFilename, "output-txt", textFilename, "filename to export tokens in a text file for curiosity (optional)")
 	flag.StringVar(&tokensFilename, "output-tokens", tokensFilename, "converts a vocabulary back to a tokens file that can be used with trainvocab (optional)")
 	flag.StringVar(&modifyFilename, "input-json", modifyFilename, "filename of a JSON file containing tokens to add or delete, format: {\"add\":[\"ab\",\"cd\"],\"special\":[\"</eos>\"],\"delete\":[\"cheese\"]} (optional)")
-	flag.StringVar(&addSingleBytes, "add-single-bytes", addSingleBytes, "enter \"256\", \"128\", \"ascii\" or \"utf8\" to add tokens for those individual bytes (optional)")
+	flag.StringVar(&addSingleBytes, "add-single-bytes", addSingleBytes, "enter \"256\", \"128\", \"ascii\", \"extended\" or \"utf8\" to add tokens for those individual bytes (optional)")
 	flag.BoolVar(&excludeOtherBytes, "delete-single-bytes", excludeOtherBytes, "deletes all the single byte tokens except those specified from add-single-bytes (optional)")
 	flag.StringVar(&delimiter, "delimiter", delimiter, "delimiter to use between each token for output-txt (optional)")
 	flag.IntVar(&resize, "resize", resize, "resizes the vocabulary to this many tokens by deleting the worst scoring tokens (optional)")
@@ -146,8 +146,10 @@ func main() {
 				reserve |= 1 << 2
 			case `ascii`:
 				reserve |= 1 << 3
+			case `extended`:
+				reserve |= 1 << 4
 			default:
-				die("Error: add-single bytes must be one of \"256\", \"128\", \"ascii\" or \"utf8\"", true)
+				die("Error: add-single bytes must be one of \"256\", \"128\", \"ascii\", \"extended\" or \"utf8\"", true)
 		}
 	}
 	if excludeOtherBytes {
@@ -169,7 +171,7 @@ func main() {
 				}
 			}
 		}
-		reserve |= 1 << 4
+		reserve |= 1 << 5
 	}
 	if delimiter != "\n" {
 		if len(delimiter) >= 1 {
@@ -292,6 +294,7 @@ func main() {
 			ReserveUTF8Bytes *bool `json:"include-utf8-bytes,omitempty"`
 			ReserveASCIIBytes *bool `json:"include-ascii-bytes,omitempty"`
 			Reserve128Bytes *bool `json:"include-128-bytes,omitempty"`
+			ReserveExtendedBytes *bool `json:"include-extended-bytes,omitempty"`
 			ExcludeOtherBytes *bool `json:"exclude-other-bytes,omitempty"`
 		}
 		var jd JsonData
@@ -330,9 +333,14 @@ func main() {
 				reserve |= 1 << 3
 			}
 		}
+		if jd.ReserveExtendedBytes != nil {
+			if *jd.ReserveExtendedBytes {
+				reserve |= 1 << 4
+			}
+		}
 		if jd.ExcludeOtherBytes != nil {
 			if *jd.ExcludeOtherBytes {
-				reserve |= 1 << 4
+				reserve |= 1 << 5
 			}
 		}
 		if jd.Mode != nil {

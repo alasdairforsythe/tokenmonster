@@ -337,6 +337,18 @@ func genASCIIbytes(list []bool, usingCapcode bool, charsetFlag uint8) {
 	}
 }
 
+func genExtendedbytes(list []bool, usingCapcode bool, charsetFlag uint8) {
+	s := `£€©®™°%¢¥—–•‘’“”áéíóúýàèìòùâêîôûäëïöüñãõçåæœ`
+	if !usingCapcode {
+		s += `ÁÉÍÓÚÝÀÈÌÒÙÂÊÎÔÛÄËÏÖÜÑÃÕÇÅÆŒ`
+	}
+	s2, _ := norm_UTF8_NFD([]byte(s))
+	for _, b := range s2 {
+		list[b] = true
+	}
+	genASCIIbytes(list, usingCapcode, charsetFlag)
+}
+
 func gen128bytes(list []bool, usingCapcode bool, charsetFlag uint8) {
 	var b byte
 	for i:=0; i<128; i++ {
@@ -2475,7 +2487,7 @@ func Load(filename string) (*Vocab, error) {
 
 // NewVocab makes a fresh vocabulary from a custom list of tokens
 // If you generated your vocabulary with TokenMonster tools, you will not be using this function but instead using `Load`
-func NewVocab(tokens [][]byte, specialTokens [][]byte, charset uint8, usingCapcode bool, include256bytes bool, include128bytes bool, includeUTF8bytes bool, includeASCIIbytes bool, excludeOtherBytes bool) *Vocab {
+func NewVocab(tokens [][]byte, specialTokens [][]byte, charset uint8, usingCapcode bool, include256bytes bool, include128bytes bool, includeUTF8bytes bool, includeASCIIbytes bool, includeExtendedBytes bool, excludeOtherBytes bool) *Vocab {
 	var reserve uint8
 	if include256bytes {
 		reserve |= 1 << 0
@@ -2489,8 +2501,11 @@ func NewVocab(tokens [][]byte, specialTokens [][]byte, charset uint8, usingCapco
 	if includeASCIIbytes {
 		reserve |= 1 << 3
 	}
-	if excludeOtherBytes {
+	if includeExtendedBytes {
 		reserve |= 1 << 4
+	}
+	if excludeOtherBytes {
+		reserve |= 1 << 5
 	}
 	vocab := new(Vocab)
 	return vocab.PrivateGenerateVocab(nil, nil, tokens, nil, specialTokens, charset, usingCapcode, 4, reserve, 0)
@@ -2626,7 +2641,10 @@ func (vocab *Vocab) PrivateGenerateVocab(tokens [][]byte, scores []float32, addT
 	if reserve & 8 != 0 {
 		genASCIIbytes(charTable, usingCapcode, charset)
 	}
-	excludeOtherBytes := (reserve & 16) != 0
+	if reserve & 16 != 0 {
+		genExtendedbytes(charTable, usingCapcode, charset)
+	}
+	excludeOtherBytes := (reserve & 32) != 0
 	vocab.reserve = vocab.reserve | reserve
 	specialMap := make(map[string]bool)
 	scoresMap := make(map[string]float32)

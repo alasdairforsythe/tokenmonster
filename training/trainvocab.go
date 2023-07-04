@@ -56,6 +56,7 @@ var (
 	includeUTF8bytes bool
 	include128bytes bool
 	includeASCIIbytes bool
+	includeExtendedbytes bool
 	excludeOtherBytes bool
 	reserve uint8
 	usingCapcode bool = false
@@ -183,6 +184,18 @@ func genASCIIbytes(list []bool) {
 	if charsetFlag == 1 && !usingCapcode {
 		list[127] = true
 	}
+}
+
+func genExtendedbytes(list []bool) {
+	s := `£€©®™°%¢¥—–•‘’“”áéíóúýàèìòùâêîôûäëïöüñãõçåæœ`
+	if !usingCapcode {
+		s += `ÁÉÍÓÚÝÀÈÌÒÙÂÊÎÔÛÄËÏÖÜÑÃÕÇÅÆŒ`
+	}
+	s2, _ := norm_UTF8_NFD([]byte(s))
+	for _, b := range s2 {
+		list[b] = true
+	}
+	genASCIIbytes(list)
 }
 
 func gen128bytes(list []bool) {
@@ -1226,6 +1239,7 @@ func main() {
 	flag.BoolVar(&include128bytes, "include-128-bytes", include128bytes, "include tokens representing every ASCII character inc. control characters (default false)")
 	flag.BoolVar(&includeUTF8bytes, "include-utf8-bytes", includeUTF8bytes, "include tokens for every byte that can occur in UTF-8 text (default false)")
 	flag.BoolVar(&includeASCIIbytes, "include-ascii-bytes", includeASCIIbytes, "include tokens for every printable ASCII character, inc. \\r\\n\\t (default false)")
+	flag.BoolVar(&includeExtendedbytes, "include-extended-bytes", includeExtendedbytes, "include tokens for ASCII & UTF-8 chars used in English, e.g. “£©áê (default false)")
 	flag.BoolVar(&includeMissingBytes, "include-missing-bytes", includeMissingBytes, "add tokens for any single bytes found in the dataset that are not tokens already (default false)")
 	flag.BoolVar(&excludeOtherBytes, "exclude-other-bytes", excludeOtherBytes, "any single bytes not specifically included will not receive tokens, even if they were in the training dataset (default false)")
 	flag.BoolVar(&fast, "fast", fast, "runs 10x faster but the vocabulary might not be as optimal (default false)")
@@ -1392,6 +1406,10 @@ func main() {
 		reserve |= 1 << 3
 		genASCIIbytes(includeBytes)
 	}
+	if includeExtendedbytes {
+		reserve |= 1 << 4
+		genExtendedbytes(includeBytes)
+	}
 	fmt.Println(`Vocabulary size:`, vocabSize)
 	if len(includeBytes) > 0 {
 		var n int
@@ -1402,7 +1420,7 @@ func main() {
 		}
 		fmt.Println(`Single byte tokens:`, n)
 		if excludeOtherBytes {
-			reserve |= 1 << 4
+			reserve |= 1 << 5
 			fmt.Println(`All other single byte tokens excluded`)
 		}
 	}
