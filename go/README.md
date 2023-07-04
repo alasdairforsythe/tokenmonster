@@ -1,4 +1,6 @@
-## Go Usage
+### [Click here for the complete documentation on pkg.go.dev.](https://pkg.go.dev/github.com/alasdairforsythe/tokenmonster/go)
+
+## Basic Usage
 
 ```
 import "github.com/alasdairforsythe/tokenmonster/go"
@@ -24,5 +26,3 @@ func usage_example() {
 `text` must be a slice of bytes. If you are using UTF-16 encoding, that slice of bytes should be already UTF-16 encoded.
 
 `decoded_text` will be also a slice of bytes in the charset encoding. If you are using UTF-8 encoding you can convert it to a string with `string()`.
-
-View the complete documentation [here](https://pkg.go.dev/github.com/alasdairforsythe/tokenmonster/go).
