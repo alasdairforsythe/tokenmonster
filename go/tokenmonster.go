@@ -50,8 +50,8 @@ type Vocab struct {
 	customIDs bool
 }
 
-// A decoder object for sequential decoding
-// Use the NewDecoder function of the Vocab struct
+// A decoder object for sequential decoding.
+// Use the NewDecoder function of the Vocab struct.
 type Decoder struct {
 	vocab Vocab
 	remainder []byte
@@ -140,7 +140,7 @@ func norm_UTF16_NFD(input []byte) ([]byte, error) {
 	return utf16LEBytes, nil
 }
 
-// Returns the number of bytes at the end of the slice of bytes that are part of an incomplete UTF-8 sequence
+// Returns the number of bytes at the end of the slice of bytes that are part of an incomplete UTF-8 sequence.
 func incompleteUTF8Bytes(bytes []byte) int {
     bytesLen := len(bytes)
     // Single byte or empty string
@@ -469,9 +469,9 @@ func canHaveUnkToken(i int, usingCapcode bool) bool {
 
 // --------- DECODER ---------
 
-// Creates a new Decoder instance
-// This is for decoding tokens in a sequence when they are to be decoded individually or in batches
-// If you are decoding all in one go, you can use the Vocab's Decode method
+// Creates a new Decoder instance.
+// This is for decoding tokens in a sequence when they are to be decoded individually or in batches.
+// If you are decoding all in one go, you can use the Vocab's Decode method.
 func (vocab *Vocab) NewDecoder() *Decoder {
 	return &Decoder{vocab:*vocab, capcodeDecoder: new(capcode.Decoder)}
 }
@@ -484,10 +484,10 @@ func (d *Decoder) Flush() []byte {
 	return data
 }
 
-// Decodes tokens from a serialized bytes slice
-// `encodingLength` must be one of: 0, 2, 3, 4
-// If you enter `encodingLength` 0 then it will determine the encoding length from the vocabulary size
-// `buffer` is optional, you can send it `nil` and it will allocate a new slice
+// Decodes tokens from a serialized bytes slice.
+// `encodingLength` must be one of: 0, 2, 3, 4.
+// If you enter `encodingLength` 0 then it will determine the encoding length from the vocabulary size.
+// `buffer` is optional, you can send it `nil` and it will allocate a new slice.
 func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte) []byte {
 	if encodingLength <= 1 {
 		if len(d.vocab.info) <= 65536 {
@@ -719,7 +719,7 @@ func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte
 	return nil
 }
 
-// Decodes tokens IDs back into bytes
+// Decodes tokens IDs back into bytes.
 func (d *Decoder) Decode(tokens []uint32) []byte {
 	if d.vocab.charset == 0 {
 		return d.vocab.decode(tokens)
@@ -761,9 +761,9 @@ func (d *Decoder) Decode(tokens []uint32) []byte {
 	return data
 }
 
-// Deserializes tokens encoded in a bytes stream into a slice of uint32 token IDs
-// `encodingLength` must be one of: 0, 2, 3, 4
-// If you enter `encodingLength` 0 then it will determine the encoding length from the vocabulary size
+// Deserializes tokens encoded in a bytes stream into a slice of uint32 token IDs.
+// `encodingLength` must be one of: 0, 2, 3, 4.
+// If you enter `encodingLength` 0 then it will determine the encoding length from the vocabulary size.
 func (d *Decoder) Deserialize(data []byte, encodingLength uint8) []uint32 {
 	return d.vocab.Deserialize(data, encodingLength)
 }
@@ -805,8 +805,8 @@ func (vocab *Vocab) Deserialize(data []byte, encodingLength uint8) (tokens []uin
 	return
 }
 
-// Decodes tokens backs into bytes
-// If you are decoding a stream of tokens individually or in batches, instead of all at once, you should use the Decode method for the Decoder struct instead
+// Decodes tokens backs into bytes.
+// If you are decoding a stream of tokens individually or in batches, instead of all at once, you should use the Decode method for the Decoder struct instead.
 func (vocab *Vocab) Decode(tokens []uint32) []byte {
 	data := vocab.decode(tokens)
 	if vocab.charset == 1 {
@@ -819,11 +819,11 @@ func (vocab *Vocab) Decode(tokens []uint32) []byte {
 	return data
 }
 
-// Decodes tokens from a serialized bytes slice
-// `encodingLength` must be one of: 0, 2, 3, 4
-// If you enter `encodingLength` 0 then it will determine the encoding length from the vocabulary size
-// `buffer` is optional, you can send it `nil` and it will allocate a new slice
-// If you are decoding a stream of tokens individually or in batches, instead of all at once, you should use the Decode method for the Decoder struct instead
+// Decodes tokens from a serialized bytes slice.
+// `encodingLength` must be one of: 0, 2, 3, 4.
+// If you enter `encodingLength` 0 then it will determine the encoding length from the vocabulary size.
+// `buffer` is optional, you can send it `nil` and it will allocate a new slice.
+// If you are decoding a stream of tokens individually or in batches, instead of all at once, you should use the Decode method for the Decoder struct instead.
 func (vocab *Vocab) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte) []byte {
 	data := vocab.decodeSerialized(b, encodingLength, buffer)
 	if vocab.charset == 1 {
@@ -972,7 +972,7 @@ func (vocab *Vocab) decodeSerialized(b []byte, encodingLength uint8, buffer []by
 
 // --------- TOKENIZE ---------
 
-// Applies all normalizations to the bytes, including capcode and NFD
+// Applies all normalizations to the bytes, including capcode and NFD.
 func (vocab *Vocab) Normalize(data []byte) ([]byte, error) {
 	if vocab.charset == 1 {
 		var temp []byte
@@ -998,8 +998,8 @@ func (vocab *Vocab) Normalize(data []byte) ([]byte, error) {
 	return data, nil
 }
 
-// Tokenizes text from bytes slice to token IDs
-// The 2nd returned value (int) is the number of characters for which there were no tokens and were replaced with Unk token
+// Tokenizes text from bytes slice to token IDs.
+// The 2nd returned value (int) is the number of characters for which there were no tokens and were replaced with Unk token.
 func (vocab *Vocab) Tokenize(data []byte) ([]uint32, int, error) {
 	normalized, err := vocab.Normalize(data)
 	if err != nil {
@@ -1008,10 +1008,10 @@ func (vocab *Vocab) Tokenize(data []byte) ([]uint32, int, error) {
 	return vocab.tokenize(normalized)
 }
 
-// Tokenizes directly into serialized bytes with either 16-bit, 24-bit or 32-bit encoded unsigned integers depending on the vocabulary size
-// Set encodingLength to 0 for it to be chosen automatically, or set `encodingLength` to 2, 3 or 4
-// The 2rd return value is the encodingLength that was used, and the 3rd is the number of characters for which there were no tokens
-// `buffer` is an optional reusable buffer, you can send nil
+// Tokenizes directly into serialized bytes with either 16-bit, 24-bit or 32-bit encoded unsigned integers depending on the vocabulary size.
+// Set encodingLength to 0 for it to be chosen automatically, or set `encodingLength` to 2, 3 or 4.
+// The 2rd return value is the encodingLength that was used, and the 3rd is the number of characters for which there were no tokens.
+// `buffer` is an optional reusable buffer, you can send nil.
 func (vocab *Vocab) TokenizeToSerialized(data []byte, encodingLength uint8, buffer []byte) ([]byte, uint8, int, error) {
 	if encodingLength <= 1 {
 		if len(vocab.info) <= 65536 {
@@ -2122,10 +2122,10 @@ func (vocab Vocab) tokenizeToSerialized32(data []byte, buffer []byte) ([]byte, i
 
 // --------- GENERAL FUNCTIONS ---------
 
-// Returns all tokens
-// The ID of the token is the index in the slice
-// The tokens are "raw" encoded with capcode
-// A token can be modified by a previous token in a sequence so this cannot be used for decoding
+// Returns all tokens.
+// The ID of the token is the index in the slice.
+// The tokens are "raw" encoded with capcode.
+// A token can be modified by a previous token in a sequence so this cannot be used for decoding.
 func (vocab *Vocab) Tokens() [][]byte {
 	info := vocab.info
 	tokens := make([][]byte, len(info))
@@ -2135,11 +2135,11 @@ func (vocab *Vocab) Tokens() [][]byte {
 	return tokens
 }
 
-// Info struct allows access to detailed information about each token from TokensDetailed()
-// Token is the token still encoded with capcode
-// TokenDecoded is the decoded form of the token, however the token can be modified by a previous token in a sequence so this cannot be used for decoding
-// Type is 0 for regular tokens, 1 for character tokens, and 3 for special tokens
-// The Score is the percentage of the training dataset that this token covered and be used for sorting the tokens by their importance
+// Info struct allows access to detailed information about each token from TokensDetailed().
+// Token is the token still encoded with capcode.
+// TokenDecoded is the decoded form of the token, however the token can be modified by a previous token in a sequence so this cannot be used for decoding.
+// Type is 0 for regular tokens, 1 for character tokens, and 3 for special tokens.
+// The Score is the percentage of the training dataset that this token covered and be used for sorting the tokens by their importance.
 type Info struct {
 	Token []byte
 	TokenDecoded []byte
@@ -2180,15 +2180,15 @@ func (vocab *Vocab) TokensDetailed() []Info {
 	return infos
 }
 
-// Special struct is for accessing information about special tokens from SpecialTokens()
+// Special struct is for accessing information about special tokens from SpecialTokens().
 type Special struct {
 	ID uint32
 	Token []byte
 	TokenDecoded []byte
 }
 
-// Returns the token IDs and the corresponding tokens of only the 
-// Set `decode` to false to receive the decoded form of the tokens
+// Returns the token IDs and the corresponding tokens of only the.
+// Set `decode` to false to receive the decoded form of the tokens.
 func (vocab *Vocab) SpecialTokens() []Special {
 	info := vocab.info
 	var list []Special
@@ -2212,7 +2212,7 @@ func (vocab *Vocab) SpecialTokens() []Special {
 	return list
 }
 
-// Returns the number of special tokens in the vocabulary
+// Returns the number of special tokens in the vocabulary.
 func (vocab *Vocab) NumSpecialTokens() int {
 	info := vocab.info
 	var num int
@@ -2224,7 +2224,7 @@ func (vocab *Vocab) NumSpecialTokens() int {
 	return num
 }
 
-// Returns the encoded token for the token ID
+// Returns the encoded token for the token ID.
 func (vocab *Vocab) Token(id uint32) []byte {
 	if id >= uint32(len(vocab.info)) {
 		return nil
@@ -2232,7 +2232,7 @@ func (vocab *Vocab) Token(id uint32) []byte {
 	return unleak(vocab.info[id].token)
 }
 
-// Returns the score of the token ID
+// Returns the score of the token ID.
 func (vocab *Vocab) Score(id uint32) float32 {
 	if id >= uint32(len(vocab.info)) {
 		return 0
@@ -2240,17 +2240,19 @@ func (vocab *Vocab) Score(id uint32) float32 {
 	return vocab.info[id].score
 }
 
-// Returns the ID of the Unk token
-// This will return an invalid ID if there is no Unk token
+// Returns the ID of the Unk token.
+// This will return an invalid ID if there is no Unk token.
 func (vocab *Vocab) Unk() uint32 {
 	return uint32(vocab.dictionary.Len())
 }
 
+// Returns true if the vocabulary is using the UNK token.
+// If used, the UNK token ID is used whenever a character being tokenized doesn't exist in the vocabulary.
 func (vocab *Vocab) HasUnk() bool {
 	return vocab.useUnk
 }
 
-// Decodes capcode from the bytes
+// Decodes capcode from the bytes.
 func (vocab *Vocab) Denormalize(b []byte) []byte {
 	if vocab.charset == 1 {
 		if (vocab.usingCapcode) {
@@ -2262,26 +2264,26 @@ func (vocab *Vocab) Denormalize(b []byte) []byte {
 	return b
 }
 
-// Returns the ID of the token from bytes
-// This only works for "raw" encoded tokens
-// Apply `Normalize` to the bytes first to use this with decoded tokens
+// Returns the ID of the token from bytes.
+// This only works for "raw" encoded tokens.
+// Apply `Normalize` to the bytes first to use this with decoded tokens.
 func (vocab *Vocab) ID(b []byte) (uint32, bool) {
 	return vocab.dictionary.Find(b)
 }
 
-// The number of tokens in the vocabulary
+// Returns number of tokens in the vocabulary, inluding UNK token if it is used.
 func (vocab *Vocab) Len() int {
 	return len(vocab.info)
 }
 
-// The length of the longest (encoded) token in the vocabulary
-// This can be lower than that chosen during training if none of the longer tokens were chosen
+// The length of the longest (encoded) token in the vocabulary.
+// This can be lower than that chosen during training if none of the longer tokens were chosen.
 func (vocab *Vocab) MaxTokenLength() int {
 	return vocab.maxlen
 }
 
-// A slice that contains all the single byte tokens in the vocabulary
-// Note that this is returned as only a slice of bytes, not a slice of slice of bytes
+// A slice that contains all the single byte tokens in the vocabulary.
+// Note that this is returned as only a slice of bytes, not a slice of slice of bytes.
 func (vocab *Vocab) ReservedTokens() []byte {
 	info := vocab.info
 	var i int
@@ -2296,7 +2298,7 @@ func (vocab *Vocab) ReservedTokens() []byte {
 	return lst[0:i]
 }
 
-// The number of single byte tokens in the vocabulary
+// The number of single byte tokens in the vocabulary.
 func (vocab *Vocab) NumReservedTokens() int {
 	info := vocab.info
 	var num int
@@ -2310,38 +2312,38 @@ func (vocab *Vocab) NumReservedTokens() int {
 	return num
 }
 
-// The charset code for the vocabulary
-// 0 = Binary, 1 = UTF-8, 2 = UTF-16
+// The charset code for the vocabulary.
+// 0 = Binary, 1 = UTF-8, 2 = UTF-16.
 func (vocab *Vocab) Charset() uint8 {
 	return vocab.charset
 }
 
-// True if the vocabulary is using capcode
-// Even if it's not using capcode the tokens are still normalized with a forward delete token if charset is UTF-8
+// True if the vocabulary is using capcode.
+// Even if it's not using capcode the tokens are still normalized with a forward delete token if charset is UTF-8.
 func (vocab *Vocab) Capcode() bool {
 	return vocab.usingCapcode
 }
 
-// The original filter for training the vocabulary
-// 0 = compressed, 1 = clean, 2 = balanced, 3 = consistent, 4 = strict, 5 = custom
+// The original filter for training the vocabulary.
+// 0 = unfiltered, 1 = clean, 2 = balanced, 3 = consistent, 4 = strict, 5 = custom.
 func (vocab *Vocab) Mode() uint8 {
 	return vocab.level
 }
 
-// True is the vocabulary uses custom token IDs
+// True is the vocabulary uses custom token IDs.
 func (vocab *Vocab) HasCustomIDs() bool {
 	return vocab.customIDs
 }
 
-// The number of tokens deleted from the vocabulary
-// These can be restored by resizing the vocabulary to be be larger
+// The number of tokens deleted from the vocabulary.
+// These can be restored by resizing the vocabulary to be be larger.
 func (vocab *Vocab) DeletedTokens() int {
 	return len(vocab.deleted)
 }
 
 // --------- LOADING AND SAVING ---------
 
-// Save the vocabulary to local file
+// Save the vocabulary to local file.
 func (vocab Vocab) Save(outputFilename string) error {
 	fi, err := os.Create(outputFilename)
 	if err != nil {
@@ -2392,7 +2394,7 @@ func (vocab Vocab) Save(outputFilename string) error {
 	return nil
 }
 
-// Load the vocabulary from a local file
+// Load the vocabulary from a local file.
 func Load(filename string) (*Vocab, error) {
 	var token tokenInfo
 	var key []byte
@@ -2485,8 +2487,8 @@ func Load(filename string) (*Vocab, error) {
 
 // --------- GENERATE & MODIFY ---------
 
-// NewVocab makes a fresh vocabulary from a custom list of tokens
-// If you generated your vocabulary with TokenMonster tools, you will not be using this function but instead using `Load`
+// NewVocab makes a fresh vocabulary from a custom list of tokens.
+// If you generated your vocabulary with TokenMonster tools, you will not be using this function but instead using `Load`.
 func NewVocab(tokens [][]byte, specialTokens [][]byte, charset uint8, usingCapcode bool, include256bytes bool, include128bytes bool, includeUTF8bytes bool, includeASCIIbytes bool, includeExtendedBytes bool, excludeOtherBytes bool) *Vocab {
 	var reserve uint8
 	if include256bytes {
@@ -2511,32 +2513,32 @@ func NewVocab(tokens [][]byte, specialTokens [][]byte, charset uint8, usingCapco
 	return vocab.PrivateGenerateVocab(nil, nil, tokens, nil, specialTokens, charset, usingCapcode, 4, reserve, 0)
 }
 
-// Adds a single token to the vocabulary
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
-// All normalization and capcode is applied automatically
+// Adds a single token to the vocabulary.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
+// All normalization and capcode is applied automatically.
 func (vocab *Vocab) AddToken(token []byte) {
 	vocab.PrivateGenerateVocab(nil, nil, [][]byte{token}, nil, nil, 0, false, 0, 0, 0)
 }
 
-// Adds a single special token to the vocabulary
-// A special token is special because only this token is allowed to tokenize text containing this
-// If any regular tokens contain your special token within them, they will be deleted
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
-// All normalization and capcode is applied automatically
+// Adds a single special token to the vocabulary.
+// A special token is special because only this token is allowed to tokenize text containing this.
+// If any regular tokens contain your special token within them, they will be deleted.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
+// All normalization and capcode is applied automatically.
 func (vocab *Vocab) AddSpecialToken(token []byte) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, nil, [][]byte{token}, 0, false, 0, 0, 0)
 }
 
-// Deletes a single token from the vocabulary
-// Tokens to delete can be capcoded encoded or not, it will look for both
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
-// All normalization and capcode is applied automatically
+// Deletes a single token from the vocabulary.
+// Tokens to delete can be capcoded encoded or not, it will look for both.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
+// All normalization and capcode is applied automatically.
 func (vocab *Vocab) DeleteToken(token []byte) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, [][]byte{token}, nil, 0, false, 0, 0, 0)
 }
 
-// Deletes a single token from the vocabulary by specifying the ID
-// This changes all the token IDs, all higher than this one will shift 1 token ID down to fill the gap
+// Deletes a single token from the vocabulary by specifying the ID.
+// This changes all the token IDs, all higher than this one will shift 1 token ID down to fill the gap.
 func (vocab *Vocab) DeleteTokenID(id uint32) {
 	if id >= uint32(len(vocab.info)) {
 		return
@@ -2544,47 +2546,47 @@ func (vocab *Vocab) DeleteTokenID(id uint32) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, [][]byte{vocab.info[id].token}, nil, 0, false, 0, 0, 0)
 }
 
-// Adds multiple regular and optionally special tokens
-// You can use `size` to resize the vocabulary to keep it at a specific size
-// Enter `size` 0 to not resize
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
+// Adds multiple regular and optionally special tokens.
+// You can use `size` to resize the vocabulary to keep it at a specific size.
+// Enter `size` 0 to not resize.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
 func (vocab *Vocab) AddTokens(addTokens [][]byte, specialTokens [][]byte, size int) {
 	vocab.PrivateGenerateVocab(nil, nil, addTokens, nil, specialTokens, 0, false, 0, 0, size)
 }
 
-// Add multiple special tokens and optionally resize
-// Enter `size` 0 to not resize
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
+// Add multiple special tokens and optionally resize.
+// Enter `size` 0 to not resize.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
 func (vocab *Vocab) AddSpecialTokens(specialTokens [][]byte, size int) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, nil, specialTokens, 0, false, 0, 0, size)
 }
 
-// Delete multiple tokens and optionally resize
-// Tokens to delete can be capcoded encoded or not, it will look for both
-// Enter `size` 0 to not resize
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
+// Delete multiple tokens and optionally resize.
+// Tokens to delete can be capcoded encoded or not, it will look for both.
+// Enter `size` 0 to not resize.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
 func (vocab *Vocab) DeleteTokens(deleteTokens [][]byte, size int) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, deleteTokens, nil, 0, false, 0, 0, size)
 }
 
-// Add regular & special tokens, delete tokens and resize, all in one
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
+// Add regular & special tokens, delete tokens and resize, all in one.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
 func (vocab *Vocab) ModifyVocabulary(addTokens [][]byte, specialTokens [][]byte, deleteTokens [][]byte, size int) {
 	vocab.PrivateGenerateVocab(nil, nil, addTokens, deleteTokens, specialTokens, 0, false, 0, 0, size)
 }
 
-// Resize the vocabulary by deleting the worst scoring tokens
-// You can also resize the vocabulary if any tokens have previously been deleted
-// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically
+// Resize the vocabulary by deleting the worst scoring tokens.
+// You can also resize the vocabulary if any tokens have previously been deleted.
+// Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
 func (vocab *Vocab) Resize(size int) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, nil, nil, 0, false, 0, 0, size)
 }
 
-// Enables the UNK token
-// The UNK token will be inserted for every character for which there is no token
-// The UNK token takes the last token ID in the vocabulary, therefore it can be enabled or disabled without affecting the rest of the vocabulary
-// This function returns true if an UNK token is added, it will return false if all characters already have tokens and therefore there is no use for an UNK token
-// You can resize after this if you want to keep the vocabulary sized as it was before
+// Enables the UNK token.
+// The UNK token will be inserted for every character for which there is no token.
+// The UNK token takes the last token ID in the vocabulary, therefore it can be enabled or disabled without affecting the rest of the vocabulary.
+// This function returns true if an UNK token is added, it will return false if all characters already have tokens and therefore there is no use for an UNK token.
+// You can resize after this if you want to keep the vocabulary sized as it was before.
 func (vocab *Vocab) EnableUnkToken() bool {
 	if vocab.useUnk {
 		return true
@@ -2599,9 +2601,9 @@ func (vocab *Vocab) EnableUnkToken() bool {
 	return true
 }
 
-// Disables the UNK token
-// The UNK token will be inserted for every character for which there is no token
-// The UNK token takes the last token ID in the vocabulary, therefore it can be enabled or disabled without affecting the rest of the vocabulary
+// Disables the UNK token.
+// The UNK token will be inserted for every character for which there is no token.
+// The UNK token takes the last token ID in the vocabulary, therefore it can be enabled or disabled without affecting the rest of the vocabulary.
 func (vocab *Vocab) DisableUnkToken() {
 	if !vocab.useUnk {
 		return
@@ -2614,7 +2616,7 @@ func (vocab *Vocab) DisableUnkToken() {
 	}
 }
 
-// Don't use this function, it's exported because it's used by the exportvocab tool
+// Don't use this function, it's exported because it's used by the exportvocab tool.
 func (vocab *Vocab) PrivateGenerateVocab(tokens [][]byte, scores []float32, addTokens [][]byte, deleteTokens [][]byte, specialTokens [][]byte, charset uint8, usingCapcode bool, level uint8, reserve uint8, resize int) *Vocab {
 
 	// Note, tokens is assumed already to be capcoded and normalized
