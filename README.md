@@ -169,9 +169,9 @@ In the first version of TokenMonster, the lowest vocabulary size was `32000`. In
 
 It's my opinion that the 100K vocab size used by OpenAI is too large, unless you intend to support at least 3 languages in the same vocabulary. More is not better. At 100K the vocabulary has "spare" tokens. I'm defining having "spare" tokens as the point at which the vocabulary begins to allocate tokens to long and specific sequences, such as (real examples) "limitations under the License" and "#### According to". This does not happen at lower vocab sizes, but it does happen at 100K vocab size in English, which implies that the optimal vocabulary has already been reached and it's now just compressing frequently occurring strings.
 
-I would advise then, that you can attempt to keep the vocabulary size fairly low in most cases and either be happy with a smaller and faster model, or increase the embedded space accordingly, or both.
+I would advise then, that you can attempt to keep the vocabulary size fairly low in most cases and either be happy with a smaller and faster model, or increase the size of the embeddings accordingly, or something in-between.
 
-In regards to optimization modes, `strict` is the one to go for if your model is limited by its own size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given the simpler vocabulary. On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
+In regards to optimization modes, `strict` is the one to go for if your model is limited by its size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given that the simpler grammar is quicker to learn (words, punctuation and modifiers are all separate tokens.) On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
 
 ## How does it work and how is it different from BPE?
 
