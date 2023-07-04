@@ -1,84 +1,94 @@
 # TokenMonster
-<img width="480" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/11868deb-78ca-4903-b4ef-8301155d2df6">
 
-***
-:loudspeaker: NOTICE: [July 1st] V3 of TokenMonster is complete and will be uploaded in the next few days.
-- Major overhaul
-- 10x faster (30x faster in Python)
-- Optimization levels: clean, balanced, consistent, strict
-- New ungreedy tokenization algorithm follows 6 branches at a time
-- Introduction of a delete token allowing for further lossless normalization
-- Fixed bug in capcode that can result in all text being uppercased
-- Supports vocabulary modification, including special tokens
+TokenMonster is a highly optimized, state-of-the-art tokenization library, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
 
-600+ pre-built vocabularies are currently being generated in the new version.
+<img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
-***
+TokenMonster is an ungreedy tokenizer and vocabulary generator, built from the ground up using custom data structures and branchless logic.
 
-TokenMonster is an ungreedy tokenizer and vocabulary builder, outperforming tiktoken by 35%. In fact, TokenMonster's smallest 24000 vocabulary consistently uses less tokens than tiktoken's largest 100256 vocabulary to tokenize the same text. Save the tokens! [See benchmark](./benchmark).
-
-Given a text dataset, a vocabulary-size and a maximum-token-length, TokenMonster selects the tokens that optimally represent your dataset at that vocabulary size. It can do this at reasonable speed (within 24 hours) on server hardware, at a cost of around $8. [Prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & native implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
+TokenMonster can train and generate an optimal vocabulary on a 1GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By selecting better tokens, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 35%. The code-optimized tokenizers do even better, [see for yourself](https://bot.co/tokenmonster/).
-
-I also believe that TokenMonster vocabularies will improve the comprehension of Large Language Models. For more details see [The Philosophy of Tokenization](#the-philosophy-of-tokenization).
+TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By using a more optimal vocabulary and a better tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 35%. The code-optimized tokenizers do even better, [see for yourself](https://bot.co/tokenmonster/).
 
 ## Features
-- Outperforms other tokenization algorithms ([benchmark](./benchmark))
-- Longer text generation at faster speed
+- Outperforms other tokenization algorithms in every area ([benchmark](./benchmark))
 - Selects the optimal vocabulary
-- Ungreedy
+- 5 optimization modes to choose from: `unfiltered`, `clean`, `balanced`, `consistent`, `strict`
+- Ungreedy: follows up to 6 parallel branches at a time
+- Fast: follows 6 branches faster than other algorithms can follow 1 ([benchmark](./benchmark))
 - Supports UTF-8, UTF-16 and binary
 - Successfully identifies words, subwords, common phrases and figures of speech by itself
 - Works with HTML tags, sequential spaces, tabs, etc. without wasting context
-- Averages 5.5 characters per token
-- No GPU needed
+- Can be trained on any language
+- Reliably achieves over 7 chr/token (depending on vocabulary size & optimization mode)
+- Vocabulary files can be modified and resized even after training
+- Add, delete and edit existing vocabularies
+- Full support for "special" and "single-byte" tokens
+- Optional UNK token
+- 420 prebuilt vocabularies ready for use
 
 ## Table of Contents
 
 * Usage [Go](./go/) | [Python](./python/) | [Javascript](./javascript/) | [Training](./training/)
 * [Benchmark](./benchmark)
 * [Prebuilt Vocabularies](#prebuilt-vocabularies)
+* [Optimization Modes](#optimization-modes)
 * [Datasets](#datasets)
 * [Capcode](#capcode)
 * [Normalization](#normalization)
-* [Which Vocabulary Size To Use](#which-vocabulary-size-to-use)
+* [Which Vocabulary To Choose](#which-vocabulary-to-choose)
 * [How does it work and how is it different from BPE?](#how-does-it-work-and-how-is-it-different-from-bpe)
 * [The Ungreedy Tokenization Algorithm](#the-ungreedy-tokenization-algorithm)
-* [The Philosophy of Tokenization](#the-philosophy-of-tokenization)
-* [To Do](#to-do)
-
+* [Support & Consultation](#support--consultation)
 
 ## Prebuilt Vocabularies
-The following vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
 
-| Name            | Vocab Size | Charset | Dataset Size | Dataset Source                     | 
-|---------------- |------------|------ |--------------|--------------------------------------|
-| english-100256  | 100256     | UTF-8 | 904 MB       | [english](#english)                  |
-| english-65536   | 65536      | UTF-8 | "            | "                                    |
-| english-50256   | 50256      | UTF-8 | "            | "                                    |
-| english-40000   | 40000      | UTF-8 | "            | "                                    |
-| english-32000   | 32000      | UTF-8 | "            | "                                    |
-| english-24000   | 24000      | UTF-8 | "            | "                                    |
-| code-100256     | 100256     | UTF-8 | 577 MB       | [code](#code)                        |
-| code-65536      | 65536      | UTF-8 | "            | "                                    |
-| code-50256      | 50256      | UTF-8 | "            | "                                    |
-| code-40000      | 40000      | UTF-8 | "            | "                                    |
-| code-32000      | 32000      | UTF-8 | "            | "                                    |
-| code-24000      | 24000      | UTF-8 | "            | "                                    |
+440 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
 
-All prebuilt vocabularies are available in 2 versions: with and without [capcode](#capcode). All have been generated with 256 reserved tokens for the single-bytes (with token ID the same number as their byte code).
+Choose a dataset from:
+`code` `english` `englishcode` `fiction`
 
-The 100256 & 50256 vocab sizes are intended to be drop-in replacements for tiktoken cl100k_base & p50k_base. In tiktoken cl100k_base for example, there are 256 reserved single-byte tokens, 100,000 normal tokens, and one `<eos>` (end of string) token. TokenMonster's 100256 also has 256 reserved single-byte tokens, 100,000 normal tokens, and you can use the token ID 100256 as the `<eos>` token to make it the same structure. Tokens outside of the vocabulary range are ignored during detokenization (e.g. a token of ID 32001 on 32000 size vocabulary) so it's no issue to add "special" tokens.
+Choose a vocab size from:
+`1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
+
+Choose an [optimization mode](#optimization-modes) from:
+`unfiltered` `clean` `balanced` `consistent` `strict`
+
+For a capcode disabled vocabulary add:
+`nocapcode`
+
+And finally add the version number:
+`v1`
+
+Examples: `fiction-24000-consistent-v1` `code-4096-clean-nocapcode-v1`
+
+## Optimization Modes
+
+All the optimization modes are lossless. The stricter the optimization mode (higher number), the more tokens will be used to tokenize the same text, but it'll be much easier for the language model to learn because the grammar is simpler. Less strict (lower number), more text can be represented with fewer tokens, but the language model will have to learn a more complicated grammar.
+
+`0 unfiltered` allows the training process to freely determine the tokens. `clean` is preferred in almost every case, because `unfiltered` tends to result in overfitting, especially for code as it results in tokens for things like `\n\t\t\t\tif (`. Use `unfiltered` for tokenizing language or data that does not use spaces as word boundaries.
+
+`1 clean` introduces filters to avoid overitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
+
+`2 balanced` prioritizes whole words and attempts to dissuade the vocabulary from doing things that are difficult to learn, such as using a delete forward marker at the end of a token.
+
+`3 consistent` is a looser version of `strict`. It aims to limit the number of different tokens that can represent the same word or phrase, and doesn't allow for open-close delimeters to be combined with words. Numbers also become limited to fewer variants.
+
+`4 strict` aims to have only 1 token per word, no matter how it is encoded. For example `However`, ` however,` and `HOWEVER!` will all use the same ` however` token, in combination with other tokens that indicate it's spacing and capitalization.
 
 ## Datasets
+
+The datasets used for generating the prebuilt vocabularies are all available on [Hugging Face](https://huggingface.co/datasets/alasdairforsythe/text-english-code-fiction-nonfiction). The sources and scripts used to generate these datasets are included in the training directory.
 
 The training data mostly came from Red Pajamas [1B Token Sample](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T-Sample). However, to reduce formal English and emphasize other languages, informal writing and code, c4_sample & cc_sample were cropped to 100MB, and [Reddit conversations](https://huggingface.co/datasets/SophieTr/reddit_clean) data were added (also cropped to 100MB.)
 
 Additionally, equally weighted code samples of 2MB per language (code_2mb) and 10MB per language (code_10mb) were added for 30 different programming languages to ensure all programming languages have representation. The source of this is [codeparrot/github-code](https://huggingface.co/datasets/codeparrot/github-code). To ensure a range of coding styles, I allowed only 1 file per GitHub repository, and per file a maximum of 200 lines selected from the middle of the file.
-The sources and scripts used to generate these datasets are included in the training directory.
+
+Given the evolving nature of writing styles, I felt that book_sample.txt, which consists of out-of-copyright books, was not a good representation of contemporary fiction. To better represent a more modern style, I curated fiction.txt and fiction_100mb.txt by throwing together a few other datasets and cleaning it up.
+
+Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset of code_10mb.txt.
 
 #### english
 
@@ -88,12 +98,36 @@ The sources and scripts used to generate these datasets are included in the trai
 | book_sample.txt          | 108,069,616 |
 | c4_sample.txt            | 100,560,318 |
 | cc_2023-06_sample.txt    | 100,852,231 |
+| fiction_100mb.txt        | 94,235,489  |
+| stackexchange_sample.txt | 71,940,138  |
+| wikipedia_sample.txt     | 79,181,873  |
+| reddit.txt               | 100,027,565 |
+|                          | **743,792,799** |
+
+#### englishcode
+
+| Filename                 | Filesize  |
+|--------------------------|-----------|
+| arxiv_sample.txt         | 88,925,569  |
+| book_sample.txt          | 108,069,616 |
+| c4_sample.txt            | 100,560,318 |
+| cc_2023-06_sample.txt    | 100,852,231 |
 | code_2mb.txt             | 62,895,904  |
+| fiction_100mb.txt        | 94,235,489  |
 | github_sample.txt        | 191,123,094 |
 | stackexchange_sample.txt | 71,940,138  |
 | wikipedia_sample.txt     | 79,181,873  |
 | reddit.txt               | 100,027,565 |
-|                          | **903,576,308** |
+|                          | **997,811,797** |
+
+#### fiction
+
+| Filename                 | Filesize  |
+|--------------------------|-----------|
+| book_sample.txt          | 108,069,616 |
+| fiction.txt              | 357,119,086  |
+| reddit.txt               | 100,027,565 |
+|                          | **565,216,267** |
 
 #### code
 
@@ -104,7 +138,7 @@ The sources and scripts used to generate these datasets are included in the trai
 | stackexchange_sample.txt | 71,940,138  |
 |                          | **577,070,031** |
 
-The following programming and markup languages are represented in both "english" and "code" vocabularies:
+The following programming and markup languages are represented in both "englishcode" and "code" vocabularies:
 1. Assembly
 2. Batchfile
 3. C
@@ -138,38 +172,25 @@ The following programming and markup languages are represented in both "english"
 
 ## Capcode
 
-[Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. On English text, using capcode offers a small performance benefit (around 2% less tokens), long sequences of capitals can be tokenized without using many tokens, and it enables the model to more easily learn the connection between lowercase and uppercased words. This advantage is much less pronounced on code because lowercase and uppercase have a distinct meaning to one another in code. I would recommend to use capcode if you are tokenizing a language that regularly uses capital letters (such as English) and not use capcode if you are tokenizing a language without capitals (such as Chinese) or code. If you are tokenizing a mix of English and code, or English and Chinese, using capcode will likely be beneficial. You can test it [here](https://bot.co/tokenmonster/) when making your decision.
-
-You enable capcode when creating a vocabulary by passing the `-capcode` flag. The rest is taken care of for you, including during tokenization and detokenization. Currently capcode is supported only with UTF-8.
+[Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text, supporting all UTF-8 characters. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. In theory, capcode makes it easier for a model to learn the meaning of words. Additionally, capcode makes for more efficient tokenization because it frees up so many tokens that would otherwise be used for uppercase variants of already existing lowercase tokens.
 
 ## Normalization
 
 TokenMonster is designed to be plug-and-play, taking care of normalization concerns for you. UTF-8 and UTF-16 vocabularies are automatically NFD normalized and encoded Little Endian regardless of architecture. When tokenizing, the exact same transformations are applied transparently, so you can pass a string to either UTF-8 or UTF-16 vocabularies, with or without capcode, and on either Little or Big Endian architecture, and it will be processed correctly.
 
-No normalizations are applied to "binary" charset vocabularies.
+No normalizations are applied to charset "None" vocabularies. If you're not sure which to choose, UTF-8 is preferred.
 
-If you're not sure which to choose, UTF-8 is preferred.
+## Which Vocabulary To Choose
 
-## Which Vocabulary Size To Use
+There is a sweet spot for a vocabulary size, and it is probably around `24000` per "language" included in the vocabulary. This is true even for large models.
 
-#### Quick Guide:
+In the first version of TokenMonster, the lowest vocabulary size was `32000`. In the second version I introduced `24000`. In the third version, I went as low as `1024`. I found I could keep going lower, and not suffer much reduction in compression. I recommend you compare them yourself on the [TokenMonster Tester](https://bot.co/tokenmonster/) webpage to get a feeling for it.
 
-1. If your primary language has capital letters, use capcode. Otherwise do not use capcode.
-2. If your primary language is English or code, use prebuilt vocabularies. Otherwise train your own vocabulary from a dataset in that language.
-3. If you are targeting one primary language:
-   - If parameter count is not an issue, choose 65536 vocab size.
-   - To make a small fast model, choose 24000 vocab size.
-   - For most models choose 32000 or 40000 vocab size.
-4. If you are targeting two languages use 50256 or 65536 vocab size.
-5. If you are targeting three or more languages, use 100256 vocab size.
+It's my opinion that the 100K vocab size used by OpenAI is too large, unless you intend to support at least 3 languages in the same vocabulary. More is not better. At 100K the vocabulary has "spare" tokens. I'm defining having "spare" tokens as the point at which the vocabulary begins to allocate tokens to long and specific sequences, such as (real examples) "limitations under the License" and "#### According to". This does not happen at lower vocab sizes, but it does happen at 100K vocab size in English, which implies that the optimal vocabulary has already been reached and it's now just compressing frequently occurring strings.
 
-I've spent a lot of time pouring over vocabularies of varying sizes and it's my opinion that the 100K vocab size used by OpenAI is too large, unless you intend to support multiple languages. More is not better because the model will have to learn all of those relationships. At 100K the vocabulary has "spare" tokens. I'm defining having "spare" tokens as the point at which the vocabulary begins to allocate tokens to long and specific sequences, such as (real examples) "limitations under the License" and "#### According to". This does not happen at lower vocab sizes, but it does happen at 100K vocab size in English, which implies that the optimal vocabulary has already been reached and now it's just compressing text. That does not mean that *all* words have tokens, nor should they. See [The Philosophy of Tokenization](#the-philosophy-of-tokenization) for *why* a word is or isn't tokenized.
+I would advise then, that you can attempt to keep the vocabulary size fairly low in most cases and either be happy with a smaller and faster model, or increase the embedded space accordingly, or both.
 
-The 30-40K vocabulary size is a much better choice for keeping the parameter count of your model down, or keeping it the same but having a smarter model. If keeping the number of parameters of the model down is not a concern, 50-60K is a good size. If you want to support Traditional Chinese, 100K is your friend, but for Latin scripts something around the 40K range is preferable. Fun fact: 20K - 50K range is also the vocabulary size of a person.
-
-So if you're only using English, choose 32K vocab size if keeping the parameters low is of benefit to your model, and choose 65536 if you want to compress the text down as much as possible.
-
-My prebuilt models can be used as-is for English and code. The 100K English model does a pretty good job of tokenizating some other languages that were present in the wikipedia_sample dataset from Red Pajamas, such as French and Italian. However, if you intend your model to use another language, I would recommend to train the vocabulary from scratch on a dataset within your target language(s). It takes around 1 day to build a new vocab on an 80-Core server, so on a desktop perhaps a week.
+In regards to optimization modes, `strict` is the one to go for if your model is limited by its own size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given the simpler vocabulary. On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
 
 ## How does it work and how is it different from BPE?
 
@@ -180,8 +201,8 @@ The secret sauce that enables TokenMonster to outperform other algorithms is mad
 2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm, which is a necessary step for optimal tokenization.
 
 In simplified terms it does the following:
-- Generates all possible tokens in the dataset (3 billion)
-- Deletes all tokens that have no more than 100 occurrences (10 million)
+- Generates all possible tokens in the dataset (40 billion in 1 GB of text)
+- Deletes all tokens that have no more than 100 occurrences (4 million)
 - Generates random vocabularies of vocab_size
 - Tokenizes the dataset using the target tokenization algorithm with the random vocabulary
 - Deletes the 1% "worst" scoring tokens
@@ -211,32 +232,12 @@ against the
 
 ## The Ungreedy Tokenization Algorithm
 
-TokenMonster uses an ungreedy tokenization method in which each token has a single alternative token that is selected during training, which is a subword of itself. First the longest token that matches the next segment of text is selected in a greedy fashion. The alternative token is looked up on an index that is included in the vocabulary file. The longest token matching the following text segment is found for both the original and its alternative, giving 2 possible branches. The preferred branch is calculated according to various rules and the tokenizing continues along that branch.
+TokenMonster uses an ungreedy tokenization method in which each token has up to 2 alternatives that are selected during training, which are subwords of itself. First the longest token that matches the next segment of text is selected in a greedy fashion. The alternative tokens are looked up on an index that is included in the vocabulary file. The longest token matching the following text segment is found for the original and its alternatives, giving 3 possible branches. If any of those do not end on a word boundary, a further branch is followed utilizing a forward delete token, which allows for words beginning with a space to be used as parts of other words. The 6 total branches are scored based on various rules, the optimal branch is chosen and the tokenization continues along that branch.
 
-The advantage of this method is that it enables the tokenizer to look ahead, whilst running only marginally slower than the greedy tokenization method. Because the training process targets the tokenization algorithm, the training is not only selecting for tokens but selecting for the relationship between each token and their alternative.
+Because the training process targets the tokenization algorithm, the training is not only selecting for tokens but selecting for the relationship between tokens in the vocabulary.
 
-## The Philosophy of Tokenization
+## Support & Consultation
 
-Tokenization is a particularly fun problem because it's infinitely complicated, and yet intuitive. On the surface it seems obvious. Yet on deeper inspection, the difficulty, or I could even say "impossibility" of the problem becomes apparent.
+Use the "Discussions" tab for free support on how to use TokenMonster. You can also hire me for a paid consultation on how to get the best out of TokenMonster, or to generate a vocabulary for you according to your specific requirements.
 
-There are virtually infinite possible tokens (3 billion unique tokens on my 904MB dataset with 32 max-token-length) and the decision to include in the vocabulary any of those tokens affects the decision for whether or not to include every other token. To illustrate my point consider this example: the token `wicked` reduces the utility of the token `wickedly` but I would still need the token `wick`. If I include `wick`, `ed` and `edly`, that affects the utility of `supposedly`. Perhaps then I should use `suppos` and my existing `edly`, but if I do that affects `suppose` which now needs 2 tokens, unless I include it too.
-
-Even if the issue of every token affecting every other token were solved, the optimal combination of tokens (the optimal vocabulary) is entirely dependant on the tokenization algorithm used when actually tokenizing text with the already determined vocabulary. Typically a greedy tokenization is used, which always chooses the longest matching token at the current position. For example, if I tokenize the string `the cat ate tuna` with tokens `the` `cat` `ate` `tuna` `the cat` `cat ate tuna`, the greedy tokenizer will choose `the cat` `ate` `tuna` (because the first token is longer), which is less optimal than `the` `cat ate tuna`. Hence, if I were intending for a greedy algorithm to be used, the vocabulary should be different than if an ungreedy algorithm were used. Then within ungreedy algorithms there are again a virtually infinite number of choices for how to implement it. Optimal then, depends upon the tokenization algorithm, and we can't just pretend like x is a good vocabulary without talking about how the tokenization process itself is being applied.
-
-How then to determine what should and shouldn't be allocated a token? Information theory can help, but it runs into it's own issues. The issue one comes across when trying to use a information gain or another formula to determine tokens is that it so happens that the worst tokens are the same tokens as the best tokens, if only another token were present or not in the vocab. It's for this reason that they did not solve the problem, and all good tokenizers, whether it be BPE or TokenMonster, use an iterative approach, which is to recalculate the effect of any change every time a change is made.
-
-Consider the *purpose* of the tokenization. For a large language model, the purpose of tokenization is primarily to split the information contain therein into information-relevant building-blocks. This is the same purpose language serves to us. In fact, the language is already tokenized: words are tokens. Words are symbols that represent meaning, and they exist in layers, each layer building from the components beneath. The first layer is a letter, then words are made of letters, phrases are made of words, sentences are made of phrases, and so on. The meaning of a word is not directly related to the meaning of a letter. Likewise the meaning of a phrase usually originated with, but can have entirely deviated from, the meaning of the component words. The meaning of a sentence is separate again to it's component phrases. To clarify, if I say `how's things?`, I'm not asking specifically about "things", rather it's understood this is an expression referring to your life in general, and an invitation to begin a conversation, which may not even be about you or your things.
-
-It's also not a given that word boundaries are even the best choice for tokens. That's an assumption. It's not a given that (and this is only an example to make a point), `I` `like` `cheese` is necessarily capturing the meaning better than `I l` `ike` `cheese`, it might be that the relationship between `I l` and `ike` in the context of cheese is more suitable — or it might not be. It's interesting to think about in the context of what the LLM itself sees, because it never truly sees the text either way. It only sees numbers. We know those numbers represent that text, but it does not know that. The LLM is learning relationships between those numbers, and their positional encodings, to one another. That being considered, it's not clear to me what exactly consistitutes a good boundary, and although I've seen papers claiming evidence for word-boundaries, I'm unconvinced that it's a fair assessment, because a good vocabulary *does* tokenize on word boundaries because that *does* produce better tokenization empirically. My point here being that while it is true that word-boundaries make for good token boundaries, that does not mean that word-boundaries *always* make for good token boundaries. For example, it's intuitively obvious that if we have a saying, which has a specific meaning that has deviated from it's component words, it would be *easier* for the LLM to determine it's meaning if it did not have to learn that this specific order of tokens means something different to what it would assume were it to see that phrase only as being built from the word components.
-
-When discussing tokenization I've noticed that many people are concerned with "out of vocabulary" (OOV) words. I know from my previous work in layout detection and OCR that there are roughly 600,000 words in English, including the various tenses, legal and scientific terminology (allowing for Latin.) Should then all these words have tokens? The answer is: no. OOV words are not a problem. Any word can be built from subword tokens, and it's just not true that a word *should have* it's own token, any more than a common phrase should have its own token. Tokens are best allocated not on words, but on a heirarchy of meanings, and the goal of a vocabulary is to strike a delicate balance between *meaning* and compression. We want to condense the text into a predetermined number of building blocks that fully capture its nuances, whilst representing its entirity with the fewest building blocks. A word made of multiple subword tokens is pricesely the same thing as a phrase, or sentence, made from multiple word tokens. Word boundaries are in fact invisible to the language model.
-
-Tokenization is an art form. It's the art of quantizing the qualitative. Its core objective lies in distilling the complexity of meaning with utmost efficiency. It stands at the crossroads where the quantitative world of rules and boxes intersects with the colorful tapestry of qualitative, multifaceted meaning. Here, the circle must be squared. The meaning must be captured and made to conform to our rules and put into our boxes, yet it must be done with respect and careful attention. Properly applied boxes and rules are distinctions that give form and function to the otherwise abstract and intangible.
-
-I hope this brings some attention to the importance of tokenization in natural language processing.
-
-## To Do
-
-☐ Optimized C++ implementation
-
-☐ Make a Python module wrapping the C++ implementation and put on PyPI
+.
