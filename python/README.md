@@ -215,7 +215,7 @@ tokens are decoded. Therefore you should always use one of the two "decode" meth
 - `list`: A list of dictionaries where the index is the token ID and each is a dictionary with the following keys:
   - `token` (string): The token including capcode encoding.
   - `token_decoded` (string): The same token decoded from its capcode form.
-  - `type` (int): The type of token (0 = regular, 1 = byte, 2 = special).
+  - `type` (int): The type of token (0 = regular, 1 = byte, 2 = special, 3 = UNK).
   - `score` (float): The token's representation in the dataset used to train the vocabulary.
 
 #### Usage
