@@ -423,7 +423,7 @@ Enables the UNK token.
 The UNK token can be added or removed without affecting the rest of the vocabulary.
 If enabled, the UNK token appears whenever there is a character that is not in the vocabulary.
 Notethat the UNK token will not be enabled if all possible characters have tokens.
-Use get_unk_token to retrieve the ID for the UNK token.
+The ID for the UNK token is `vocab.unk`, which is `None` if there is no unk token.
 
 #### Returns
 
