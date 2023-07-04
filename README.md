@@ -90,7 +90,7 @@ Given the evolving nature of writing styles, I felt that book_sample.txt, which 
 
 Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset of code_10mb.txt.
 
-#### english
+### english
 
 | Filename                 | Filesize  |
 |--------------------------|-----------|
@@ -104,7 +104,7 @@ Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset
 | reddit.txt               | 100,027,565 |
 |                          | **743,792,799** |
 
-#### englishcode
+### englishcode
 
 | Filename                 | Filesize  |
 |--------------------------|-----------|
@@ -120,7 +120,7 @@ Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset
 | reddit.txt               | 100,027,565 |
 |                          | **997,811,797** |
 
-#### fiction
+### fiction
 
 | Filename                 | Filesize  |
 |--------------------------|-----------|
@@ -129,7 +129,7 @@ Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset
 | reddit.txt               | 100,027,565 |
 |                          | **565,216,267** |
 
-#### code
+### code
 
 | Filename                 | Filesize  |
 |--------------------------|-----------|
@@ -138,37 +138,18 @@ Note: fiction_100mb.txt is a subset of fiction.txt, and code_2mb.txt is a subset
 | stackexchange_sample.txt | 71,940,138  |
 |                          | **577,070,031** |
 
+
 The following programming and markup languages are represented in both "englishcode" and "code" vocabularies:
-1. Assembly
-2. Batchfile
-3. C
-4. C#
-5. C++
-6. CMake
-7. CSS
-8. Dockerfile
-9. FORTRAN
-10. Go
-11. Haskell
-12. HTML
-13. Java
-14. JavaScript
-15. Julia
-16. Lua
-17. Makefile
-18. Markdown
-19. PHP
-20. Perl
-21. PowerShell
-22. Python
-23. Ruby
-24. Rust
-25. SQL
-26. Scala
-27. Shell
-28. TypeScript
-29. TeX
-30. Visual Basic
+
+| Language     |      |      |      |      |
+|--------------|--------------|--------------|--------------|--------------|
+| Assembly     | Batchfile    | C            | C#           | C++          |
+| CMake        | CSS          | Dockerfile   | FORTRAN      | Go           |
+| Haskell      | HTML         | Java         | JavaScript   | Julia        |
+| Lua          | Makefile     | Markdown     | PHP          | Perl         |
+| PowerShell   | Python       | Ruby         | Rust         | SQL          |
+| Scala        | Shell        | TypeScript   | TeX          | Visual Basic |
+
 
 ## Capcode
 
