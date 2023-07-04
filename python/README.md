@@ -29,7 +29,7 @@ decoded_text = decoder.detokenize(tokens)
 
 There is a `decode` function for both the vocabulary object (`vocab.decode()`), and also the decoder object that is made with `vocab.decoder()`. The difference is that the decoder object is meant for when you are individually decoding a sequence of IDs that are part of the same generation sequence, e.g. decoding tokens as they are generating. If you already have the full sequence and intend to decode it all in one go, you can use `vocab.decode`.
 
-It's possible to pass a token to the Decoder and get an empty string in response, this is fine it just means that that token doesn't represent a full printable character, and it'll be along with the next token.
+It's possible to pass a token to the Decoder and get an empty string in response. This is fine, it means that token doesn't represent a full printable character, for example it's the first part of a multipart UTF-8 character, or it's capcode uppercase marker meant to influence the next token. It's for this reason that the decoder object is used.
 
 ### tokenmonsterserver
 
@@ -423,7 +423,7 @@ Enables the UNK token.
 The UNK token can be added or removed without affecting the rest of the vocabulary.
 If enabled, the UNK token appears whenever there is a character that is not in the vocabulary.
 Notethat the UNK token will not be enabled if all possible characters have tokens.
-Use get_unk_token to retrieve the ID for the UNK token.
+Use `vocab.unk_token_id()` to retrieve the ID for the UNK token.
 
 #### Returns
 
