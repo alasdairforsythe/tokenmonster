@@ -594,7 +594,7 @@ class TokenMonster:
         The UNK token can be added or removed without affecting the rest of the vocabulary.
         If enabled, the UNK token appears whenever there is a character that is not in the vocabulary.
         Note that the UNK token will not be enabled if all possible characters have tokens.
-        Use get_unk_token to retrieve the ID for the UNK token.
+        Use `vocab.unk_token_id()` to retrieve the ID for the UNK token.
         """
         return self.modify(None, None, None, 0, True)
     
