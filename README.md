@@ -10,21 +10,22 @@ TokenMonster can train and generate an optimal vocabulary on a 1GB dataset withi
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By using a more optimal vocabulary and a better tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by 35%. The code-optimized tokenizers do even better, [see for yourself](https://bot.co/tokenmonster/).
+TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by over 50%. [See for yourself](https://bot.co/tokenmonster/).
 
 ## Features
 - Outperforms other tokenization algorithms in every area ([benchmark](./benchmark))
-- Selects the optimal vocabulary
+- Selects the optimal vocabulary for a given dataset
 - 5 optimization modes to choose from: `unfiltered`, `clean`, `balanced`, `consistent`, `strict`
 - Ungreedy: follows up to 6 parallel branches at a time
 - Fast: follows 6 branches faster than other algorithms can follow 1 ([benchmark](./benchmark))
+- Utilizes 'capcode' marker tokens to encode uppercasing and forward delete
 - Supports UTF-8, UTF-16 and binary
 - Successfully identifies words, subwords, common phrases and figures of speech by itself
 - Works with HTML tags, sequential spaces, tabs, etc. without wasting context
 - Can be trained on any language
 - Reliably achieves over 7 chr/token (depending on vocabulary size & optimization mode)
 - Vocabulary files can be modified and resized even after training
-- Add, delete and edit existing vocabularies
+- Add & remove tokens from existing vocabularies
 - Full support for "special" and "single-byte" tokens
 - Optional UNK token
 - 420 prebuilt vocabularies ready for use
@@ -74,7 +75,7 @@ All the optimization modes are lossless. The stricter the optimization mode (hig
 
 `2 balanced` prioritizes whole words and attempts to dissuade the vocabulary from doing things that are difficult to learn, such as using a delete forward marker at the end of a token.
 
-`3 consistent` is a looser version of `strict`. It aims to limit the number of different tokens that can represent the same word or phrase, and doesn't allow for open-close delimeters to be combined with words. Numbers also become limited to fewer variants.
+`3 consistent` is a looser version of `strict`. It aims to limit the number of different tokens that can represent the same word or phrase, and doesn't allow for open-close delimeters to be combined with words or each other. Numbers also become limited to fewer variants.
 
 `4 strict` aims to have only 1 token per word, no matter how it is encoded. For example `However`, ` however,` and `HOWEVER!` will all use the same ` however` token, in combination with other tokens that indicate it's spacing and capitalization.
 
@@ -169,9 +170,11 @@ In the first version of TokenMonster, the lowest vocabulary size was `32000`. In
 
 It's my opinion that the 100K vocab size used by OpenAI is too large, unless you intend to support at least 3 languages in the same vocabulary. More is not better. At 100K the vocabulary has "spare" tokens. I'm defining having "spare" tokens as the point at which the vocabulary begins to allocate tokens to long and specific sequences, such as (real examples) "limitations under the License" and "#### According to". This does not happen at lower vocab sizes, but it does happen at 100K vocab size in English, which implies that the optimal vocabulary has already been reached and it's now just compressing frequently occurring strings.
 
-I would advise then, that you can attempt to keep the vocabulary size fairly low in most cases and either be happy with a smaller and faster model, or increase the embedded space accordingly, or both.
+I would advise then, that you can attempt to keep the vocabulary size fairly low in most cases and either be happy with a smaller and faster model, or increase the size of the embeddings accordingly, or something in-between.
 
-In regards to optimization modes, `strict` is the one to go for if your model is limited by its own size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given the simpler vocabulary. On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
+In regards to optimization modes, `strict` is the one to go for if your model is limited by its size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given that the simpler grammar is quicker to learn (words, punctuation and modifiers are all separate tokens.) On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
+
+`strict` does very well for long bodies of natural text, such as novels and articles, but it's too strict for code. `consistent` will give the best balance of consistency for tokenizing code whilst keeping the grammar simple. `balanced` and `clean` are excellent at compressing code into fewer tokens, but the cost of this is a complex grammar. I'd therefore recommend `consistent` for most code generating models.
 
 ## How does it work and how is it different from BPE?
 
@@ -179,7 +182,7 @@ Byte-Pair-Encoding starts with single byte tokens and merges frequently occuring
 
 The secret sauce that enables TokenMonster to outperform other algorithms is made from:
 1. The distillation method is an effective means of separating that which is wanted from that which is not, without losing any of the cream.
-2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm, which is a necessary step for optimal tokenization.
+2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm and dataset, which is a necessary step for optimal tokenization.
 
 In simplified terms it does the following:
 - Generates all possible tokens in the dataset (40 billion in 1 GB of text)
@@ -213,7 +216,7 @@ against the
 
 ## The Ungreedy Tokenization Algorithm
 
-TokenMonster uses an ungreedy tokenization method in which each token has up to 2 alternatives that are selected during training, which are subwords of itself. First the longest token that matches the next segment of text is selected in a greedy fashion. The alternative tokens are looked up on an index that is included in the vocabulary file. The longest token matching the following text segment is found for the original and its alternatives, giving 3 possible branches. If any of those do not end on a word boundary, a further branch is followed utilizing a forward delete token, which allows for words beginning with a space to be used as parts of other words. The 6 total branches are scored based on various rules, the optimal branch is chosen and the tokenization continues along that branch.
+TokenMonster uses an ungreedy tokenization method in which each token has up to 2 alternatives selected during training, which are subwords of itself. First the longest token that matches the next segment of text is selected in a greedy fashion. The alternative tokens are looked up on an index that is included in the vocabulary file. The longest token matching the following text segment is found for the original and its alternatives, giving 3 possible branches. If any of those do not end on a word boundary, a further branch is followed utilizing a forward delete token, which allows for words beginning with a space to be used as parts of other words. The 6 total branches are scored based on various rules, the optimal branch is chosen and the tokenization continues along that branch.
 
 Because the training process targets the tokenization algorithm, the training is not only selecting for tokens but selecting for the relationship between tokens in the vocabulary.
 
