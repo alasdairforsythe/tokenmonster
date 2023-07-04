@@ -523,7 +523,7 @@ class TokenMonster {
               score3b = -1000000;
               
               i2 = i + len;
-              const temp1 = this.id2flag[id] & 16;
+              const temp1 = this.id2flag[id] & 32;
               const temp2 = this.beginByte[text[i2]];
               if (i2 < textLen && (temp1 == 0 || temp2 != 12)) {
                 // Look ahead from first option
