@@ -42,22 +42,27 @@ It's my intention for this library to integrate directly into Hugging Face Trans
 .
 ## Full Documentation
 1. [Usage](#usage)
-2. [TokenMonster Methods](#tokenmonster-methods)
+2. TokenMonster Methods
     - [TokenMonster.\_\_init\_\_(path)](#tokenmonster__init__path)
     - [TokenMonster.\_\_len\_\_()](#tokenmonster__len__)
+	- [vocab.save(fname)](#vocabsavefname)
+3. Tokenization & Detokenization
+	- [vocab.tokenize(text)](#vocabtokenizetext)
+	- [vocab.decode(tokens)](#vocabdecodetokens)
     - [vocab.decoder()](#vocabdecoder)
+    - [decoder.decode(tokens)](#decoderdecodetokens)
+4. Vocabulary Information
+    - [vocab.get_dictionary()](#vocabget_dictionary)
     - [vocab.capcode()](#vocabcapcode)
     - [vocab.charset()](#vocabcharset)
-    - [vocab.decode(tokens)](#vocabdecodetokens)
-    - [vocab.tokenize(text)](#vocabtokenizetext)
-    - [vocab.get_dictionary()](#vocabget_dictionary)
-    - [vocab.convert_ids_to_tokens(ids)](#vocabconvert_ids_to_tokensids)
-    - [vocab.id_to_token(id)](#vocabid_to_tokenid)
-    - [vocab.convert_ids_to_tokens_decoded(ids)](#vocabconvert_ids_to_tokens_decodedids)
-    - [vocab.id_to_token_decoded(id)](#vocabid_to_token_decodedid)
-    - [vocab.convert_tokens_to_ids(tokens)](#vocabconvert_tokens_to_idstokens)
-    - [vocab.token_to_id(token)](#vocabtoken_to_idtoken)
     - [vocab.unk_token_id()](#vocabunk_token_id)
+    - [vocab.convert_ids_to_tokens(ids)](#vocabconvert_ids_to_tokensids)
+    - [vocab.convert_ids_to_tokens_decoded(ids)](#vocabconvert_ids_to_tokens_decodedids)
+    - [vocab.id_to_token(id)](#vocabid_to_tokenid)
+    - [vocab.id_to_token_decoded(id)](#vocabid_to_token_decodedid)
+	- [vocab.token_to_id(token)](#vocabtoken_to_idtoken)
+    - [vocab.convert_tokens_to_ids(tokens)](#vocabconvert_tokens_to_idstokens)
+5. Vocabulary Modification
     - [vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)](#vocabmodifyadd_special_tokens-add_regular_tokensnone-delete_tokensnone-resizenone-change_unknone)
     - [vocab.add_token(token)](#vocabadd_tokentoken)
     - [vocab.delete_token(token)](#vocabdelete_tokentoken)
@@ -65,14 +70,11 @@ It's my intention for this library to integrate directly into Hugging Face Trans
     - [vocab.resize(size)](#vocabresizesize)
     - [vocab.enable_unk_token()](#vocabenable_unk_token)
     - [vocab.disable_unk_token()](#vocabdisable_unk_token)
-    - [vocab.save(fname)](#vocabsavefname)
-3. [TokenMonster Class Methods](#tokenmonster-class-methods)
+6. TokenMonster Class Methods
     - [TokenMonster.set_local_directory(dir=None)](#tokenmonsterset_local_directorydirnone)
     - [TokenMonster.deserialize_tokens(binary_string)](#tokenmonsterdeserialize_tokensbinary_string)
     - [TokenMonster.serialize_tokens(integer_list)](#tokenmonsterserialize_tokensinteger_list)
     - [TokenMonster.disconnect()](#tokenmonsterdisconnect)
-4. [TokenMonster.DecoderInstance](#tokenmonsterdecoderinstance)
-    - [decoder.decode(tokens)](#deocoderdecodetokens)
 
 ## Usage
 
@@ -115,57 +117,28 @@ vocab = TokenMonster("filename")
 number_of_tokens = len(vocab)
 ```
 
-### vocab.decoder()
+### vocab.save(fname)
 
-Returns a new decoder instance used for decoding tokens into text.
+Saves the current vocabulary to a file.
 
-#### Returns
-
-- `TokenMonster.DecoderInstance`: A new decoder instance.
-
-#### Usage
-
-```python
-decoder = vocab.decoder()
-```
-
-### vocab.capcode()
-
-Returns true if the vocabulary has capcode enabled.
-
-#### Returns
-
-- `bool`: True if capcode is enabled, False otherwise.
-
-### vocab.charset()
-
-Returns the character set used by the vocabulary.
-
-#### Returns
-
-- `string`: The character set used by the vocabulary. Possible values are "UTF-8", "UTF-16", or "None".
-
-### vocab.decode(tokens)
-
-Decodes tokens into a string.
-
-Only use this "decode" method if you are decoding a complete "batch" or complete "conversation" in one go.
-For decoding an incomplete batch sequentially (as the tokens become available) instead
-use the decoder object.
+The working directory is not the Python working directory but the TokenMonster default directory.
+Specify full filepath if you intend to save elsewhere.
 
 #### Parameters
 
-- `tokens` (int or list of int): The tokens to decode into a string.
+- `fname` (string): The filename to save the vocabulary to.
 
 #### Returns
 
-- `string`: The composed string from the input tokens.
+- `None`
 
 #### Usage
 
 ```python
-decoded_string = vocab.decode(tokens)
+vocab.save("test.vocab")
 ```
+
+## Tokenization & Detokenization
 
 ### vocab.tokenize(text)
 
@@ -190,6 +163,44 @@ free to pass that instead.
 tokens = vocab.tokenize(text)
 ```
 
+### vocab.decode(tokens)
+
+Decodes tokens into a string.
+
+Only use this "decode" method if you are decoding a complete "batch" or complete "conversation" in one go.
+For decoding an incomplete batch sequentially (as the tokens become available) instead
+use the decoder object.
+
+#### Parameters
+
+- `tokens` (int or list of int): The tokens to decode into a string.
+
+#### Returns
+
+- `string`: The composed string from the input tokens.
+
+#### Usage
+
+```python
+decoded_string = vocab.decode(tokens)
+```
+
+### vocab.decoder()
+
+Returns a new decoder instance used for decoding tokens into text.
+
+#### Returns
+
+- `TokenMonster.DecoderInstance`: A new decoder instance.
+
+#### Usage
+
+```python
+decoder = vocab.decoder()
+```
+
+## Vocabulary Information
+
 ### vocab.get_dictionary()
 
 Returns a dictionary of all tokens in the vocabulary.
@@ -213,9 +224,45 @@ tokens are decoded. Therefore you should always use one of the two "decode" meth
 tokens = vocab.get_dictionary()
 ```
 
+### vocab.capcode()
+
+Returns true if the vocabulary has capcode enabled.
+
+#### Returns
+
+- `bool`: True if capcode is enabled, False otherwise.
+
+### vocab.charset()
+
+Returns the character set used by the vocabulary.
+
+#### Returns
+
+- `string`: The character set used by the vocabulary. Possible values are "UTF-8", "UTF-16", or "None".
+
+### vocab.unk_token_id()
+
+Returns the ID of the UNK token, or 'None' type if there is no UNK token.
+
+#### Returns
+
+- `int or None`: The ID of the UNK token. None if there is no UNK token.
+
 ### vocab.convert_ids_to_tokens(ids)
 
 Get the token string from any token ID, in its capcode-encoded form.
+
+#### Parameters
+
+- `ids` (int or list of ints): The token IDs.
+
+#### Returns
+
+- `list of strings`: The token strings corresponding to the input IDs. None type for any IDs that are not in the vocabulary.
+
+### vocab.convert_ids_to_tokens_decoded(ids)
+
+Get the token string from any token IDs, in its capcode-decoded form.
 
 #### Parameters
 
@@ -237,18 +284,6 @@ Get the token string from a single token ID, in its capcode-encoded form.
 
 - `string or None`: The token string corresponding to the input ID. None if the ID is not in the vocabulary.
 
-### vocab.convert_ids_to_tokens_decoded(ids)
-
-Get the token string from any token IDs, in its capcode-decoded form.
-
-#### Parameters
-
-- `ids` (int or list of ints): The token IDs.
-
-#### Returns
-
-- `list of strings`: The token strings corresponding to the input IDs. None type for any IDs that are not in the vocabulary.
-
 ### vocab.id_to_token_decoded(id)
 
 Get the token string from a single token ID, in its capcode-decoded form.
@@ -260,20 +295,6 @@ Get the token string from a single token ID, in its capcode-decoded form.
 #### Returns
 
 - `string or None`: The token string corresponding to the input ID. None if the ID is not in the vocabulary.
-
-### vocab.convert_tokens_to_ids(tokens)
-
-Returns the IDs of the corresponding tokens. 'None' for any not in the vocabulary.
-
-This works for both capcode-encoded "raw" tokens and their decoded form.
-
-#### Parameters
-
-- `tokens` (string or list of strings): The tokens to convert to IDs.
-
-#### Returns
-
-- `list of ints`: The token IDs corresponding to the input tokens. None type for any tokens that are not in the vocabulary.
 
 ### vocab.token_to_id(token)
 
@@ -289,13 +310,21 @@ This works for both capcode-encoded "raw" tokens and their decoded form.
 
 - `int or None`: The ID of the token. None if the token is not in the vocabulary.
 
-### vocab.unk_token_id()
+### vocab.convert_tokens_to_ids(tokens)
 
-Returns the ID of the UNK token, or 'None' type if there is no UNK token.
+Returns the IDs of the corresponding tokens. 'None' for any not in the vocabulary.
+
+This works for both capcode-encoded "raw" tokens and their decoded form.
+
+#### Parameters
+
+- `tokens` (string or list of strings): The tokens to convert to IDs.
 
 #### Returns
 
-- `int or None`: The ID of the UNK token. None if there is no UNK token.
+- `list of ints`: The token IDs corresponding to the input tokens. None type for any tokens that are not in the vocabulary.
+
+## Vocabulary Modification
 
 ### vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)
 
@@ -393,7 +422,7 @@ Enables the UNK token.
 
 The UNK token can be added or removed without affecting the rest of the vocabulary.
 If enabled, the UNK token appears whenever there is a character that is not in the vocabulary.
-Note that the UNK token will not be enabled if all possible characters have tokens.
+Notethat the UNK token will not be enabled if all possible characters have tokens.
 Use get_unk_token to retrieve the ID for the UNK token.
 
 #### Returns
@@ -411,25 +440,46 @@ Without an UNK token, any character for which there is no token is ignored durin
 
 - `int`: The new size of the vocabulary.
 
-### vocab.save(fname)
+## TokenMonster.DecoderInstance
 
-Saves the current vocabulary to a file.
+A nested class for decoding streams of tokens in sequence.
 
-The working directory is not the Python working directory but the TokenMonster default directory.
-Specify full filepath if you intend to save elsewhere.
+This class takes tokens and decodes them to generate human-readable strings.
+
+## Usage
+
+```python
+vocab = TokenMonster("english-32000-balanced-v1")
+decoder = vocab.decoder()
+decoded_string = decoder.decode(tokens)
+decoded_string += decoder.decode(more_tokens)
+```
+
+### decoder.decode(tokens)
+
+A decoder object used for decoding token streams.
+
+This decoder object is used instead of the vocabulary decode method when you are
+decoding tokens in small segments, or one by one, that are part of a longer
+stream of encoded tokens. A new decoder object should be used for each
+stream, then deleted. If you are decoding all tokens in one call, instead of
+in multiple calls, then you can use the vocabulary decode method directly.
 
 #### Parameters
 
-- `fname` (string): The filename to save the vocabulary to.
+- `tokens` (int or list of ints): A token ID or list of token IDs.
 
 #### Returns
 
-- `None`
+- `string`: A human-readable string derived from the input tokens.
 
 #### Usage
 
 ```python
-vocab.save("test.vocab")
+vocab = TokenMonster("english-32000-balanced-v1")
+decoder = vocab.Decoder()
+decoded_string = decoder.decode(tokens)
+decoded_string += decoder.decode(more_tokens)
 ```
 
 ## TokenMonster Class Methods
@@ -477,47 +527,4 @@ Disconnects and closes tokenmonsterserver.
 #### Returns
 
 - `None`
-
-## TokenMonster.DecoderInstance
-
-A nested class for decoding streams of tokens in sequence.
-
-This class takes tokens and decodes them to generate human-readable strings.
-
-## Usage
-
-```python
-vocab = TokenMonster("english-32000-balanced-v1")
-decoder = vocab.decoder()
-decoded_string = decoder.decode(tokens)
-decoded_string += decoder.decode(more_tokens)
-```
-
-### deocoder.decode(tokens)
-
-A decoder object used for decoding token streams.
-
-This decoder object is used instead of the vocabulary decode method when you are
-decoding tokens in small segments, or one by one, that are part of a longer
-stream of encoded tokens. A new decoder object should be used for each
-stream, then deleted. If you are decoding all tokens in one call, instead of
-in multiple calls, then you can use the vocabulary decode method directly.
-
-#### Parameters
-
-- `tokens` (int or list of ints): A token ID or list of token IDs.
-
-#### Returns
-
-- `string`: A human-readable string derived from the input tokens.
-
-#### Usage
-
-```python
-vocab = TokenMonster("english-32000-balanced-v1")
-decoder = vocab.Decoder()
-decoded_string = decoder.decode(tokens)
-decoded_string += decoder.decode(more_tokens)
-```
-
 .
