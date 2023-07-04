@@ -62,7 +62,7 @@ It's my intention for this library to integrate directly into Hugging Face Trans
     - [vocab.add_token(token)](#vocabadd_tokentoken)
     - [vocab.delete_token(token)](#vocabdelete_tokentoken)
     - [vocab.add_special_token(token)](#vocabadd_special_tokentoken)
-    - [vocab.resize(val)](#vocabresizeval)
+    - [vocab.resize(size)](#vocabresizesize)
     - [vocab.enable_unk_token()](#vocabenable_unk_token)
     - [vocab.disable_unk_token()](#vocabdisable_unk_token)
     - [vocab.save(fname)](#vocabsavefname)
@@ -372,7 +372,7 @@ Add one or more special tokens. This also changes the token IDs. See "modify".
 
 - `int`: The new size of the vocabulary.
 
-### vocab.resize(val)
+### vocab.resize(size)
 
 Changes the size of the vocabulary. This also changes the token IDs. See "modify".
 
@@ -381,7 +381,7 @@ tokens are removed when reducing.
 
 #### Parameters
 
-- `val` (int): The new size of the vocabulary.
+- `size` (int): The new size of the vocabulary.
 
 #### Returns
 
