@@ -24,10 +24,10 @@ tokens = vocab.tokenize(text)
 Then to detokenize:
 ```python
 decoder = vocab.decoder()
-decoded_text = decoder.detokenize(tokens)
+decoded_text = decoder.decode(tokens)
 ```
 
-There is a `decode` function for both the vocabulary object (`vocab.decode()`), and also the decoder object that is made with `vocab.decoder()`. The difference is that the decoder object is meant for when you are individually decoding a sequence of IDs that are part of the same generation sequence, e.g. decoding tokens as they are generating. If you already have the full sequence and intend to decode it all in one go, you can use `vocab.decode`.
+There is a `decode` function for both the vocabulary object `vocab.decode()`, and also the decoder object that is made with `vocab.decoder()`. The difference is that the decoder object is meant for when you are individually decoding a sequence of IDs that are part of the same generation sequence, e.g. decoding tokens as they are generating. If you already have the full sequence and intend to decode it all in one go, you can use `vocab.decode`.
 
 It's possible to pass a token to the Decoder and get an empty string in response. This is fine, it means that token doesn't represent a full printable character, for example it's the first part of a multipart UTF-8 character, or it's capcode uppercase marker meant to influence the next token. It's for this reason that the decoder object is used.
 
