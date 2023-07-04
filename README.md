@@ -71,7 +71,7 @@ All the optimization modes are lossless. The stricter the optimization mode (hig
 
 `0 unfiltered` allows the training process to freely determine the tokens. `clean` is preferred in almost every case, because `unfiltered` tends to result in overfitting, especially for code as it results in tokens for things like `\n\t\t\t\tif (`. Use `unfiltered` for tokenizing language or data that does not use spaces as word boundaries.
 
-`1 clean` introduces filters to avoid overitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
+`1 clean` introduces filters to avoid overfitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
 
 `2 balanced` prioritizes whole words and attempts to dissuade the vocabulary from doing things that are difficult to learn, such as using a delete forward marker at the end of a token.
 
