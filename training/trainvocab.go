@@ -2000,7 +2000,7 @@ func main() {
 					}
 					// Add from double tokens
 					addlist := make([][]byte, 0, 1000)
-					n := (uniqueTokens.Len() - vocabSizeEffective) / 2
+					n := (uniqueTokens.Len() - vocabSizeEffective) / 3
 					if hasSpecial {
 						i = 0
 						for _, b := range double1 {
@@ -2125,7 +2125,7 @@ func main() {
 			// Shuffle the dictionary and send it out to the workers
 			shuffles = 0
 			for atLeast1UniqueVocab := false; !atLeast1UniqueVocab; { // keep trying until at least 1 vocabulary is generated
-				if shuffles == 10000 { // stuck in a loop because all vocabs have been tried already
+				if shuffles == 10000 || (shuffles > 0 && remainingTokens <= vocabSizeEffective) { // stuck in a loop because all vocabs have been tried already
 					if justReset { // every possibility has been tried
 						log.Println(`-- FINISHED --`)
 						fmt.Println(`All near vocabularies have been tested`)
