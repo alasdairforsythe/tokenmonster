@@ -191,7 +191,9 @@ Usage of ./trainvocab:
         number of worker threads to run, excluding main thread (default 8)
 ```
 
-`-dataset` is the dataset. `-dictionary` is the tokens file from `getalltokens`. `-dir` is the output directory (many intermediary files are created). `-vocab-size` is your target vocabulary size. `-workers` is the number of threads to run (best to set it to 1 less than the number of CPU threads.)
+`-dataset` is the dataset. `-dictionary` is the tokens file from `getalltokens`. `-vocab-size` is your target vocabulary size. `-workers` is the number of threads to run (best to set it to 1 less than the number of CPU threads.)
+
+`-dir` is the output directory. It's created if it does not exist. Many intermediate files are created so make sure it's an empty directory. Also `trainvocab` will attempt to resume/continue from it's previous state if the directory is not empty and it sees the intermediary files. That can be useful in case you need to stop and start it, but it means bad things will happen if you use the same `-dir` for different vocabularies.
 
 Before running `trainvocab` you first need to decide on the parameters for what to do with single-byte tokens. Those are tokens for individual bytes, such standard English characters that are represented with ASCII, and starting or continuation bytes of multi-byte sequences in UTF-8.
 
