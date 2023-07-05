@@ -2241,7 +2241,7 @@ func (vocab *Vocab) Score(id uint32) float32 {
 }
 
 // Returns the ID of the Unk token.
-// This will return an invalid ID if there is no Unk token.
+// This will return an invalid ID if there is no Unk token. Use HasUnk() to first check if there is an UNK token.
 func (vocab *Vocab) Unk() uint32 {
 	return uint32(vocab.dictionary.Len())
 }
@@ -2576,7 +2576,7 @@ func (vocab *Vocab) ModifyVocabulary(addTokens [][]byte, specialTokens [][]byte,
 }
 
 // Resize the vocabulary by deleting the worst scoring tokens.
-// You can also resize the vocabulary if any tokens have previously been deleted.
+// You can also resize the vocabulary to be larger if any tokens have previously been deleted.
 // Modifying a vocabulary changes all the token IDs, it does not add the token at the end, the tokens are gives IDs alphabetically.
 func (vocab *Vocab) Resize(size int) {
 	vocab.PrivateGenerateVocab(nil, nil, nil, nil, nil, 0, false, 0, 0, size)

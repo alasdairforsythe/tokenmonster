@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"unicode"
 	"reflect"
+	"strings"
 	"math/rand"
 	"io/ioutil"
 	"sync/atomic"
@@ -83,6 +84,13 @@ type resultStruct struct {
 	missing []byte
 	scores []uint32
 	usingFullDataset bool
+	workType uint8
+}
+
+type workStruct struct {
+	testVocab *pansearch.Fast
+	workType uint8
+	fast bool
 }
 
 type bestStruct struct {
@@ -108,7 +116,7 @@ type tokenInner struct {
 }
 
 // Channels that holds the various random dictionaries
-var channelWork = make(chan *pansearch.Fast, 2)
+var channelWork = make(chan workStruct, 2)
 var channelResult = make(chan resultStruct, workers * 4)
 var regx = regexp.MustCompile("^[0-9]+_[0-9]+\\.[a-zA-Z0-9]+$")
 
@@ -470,9 +478,10 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 	var divider, remainingTokens, tokensInText, maxlen, lenData, maxlenWithSpace int
 	var run int = 1
 	var reachedMidway, hasDeleteToken bool
-	var found, found1, found2, found3 bool
+	var found, found1, found2, found3, usingFullDataset bool
 	var firstRun bool = true
 	var data []byte
+	var dataList [][]byte
 	var tokenData, original tokenInfo
 	var first, second tokenInner
 	var forwardDelete, maxScore int
@@ -487,11 +496,13 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 	}
 	lilbufStart := lilbuf[lilbufOffset:]
 
-	for testVocab := range channelWork {
+	for asset := range channelWork {
 		if firstRun {
 			log.Println(`Worker`, id, `starting run`, run)
 			firstRun = false
 		}
+
+		testVocab := asset.testVocab
 
 		// Reset vars this round's total and scores
 		tokensInText = 0
@@ -821,14 +832,19 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 		if !reachedMidway {
 			remainingTokens = int(atomic.LoadInt64(&remainingTokens_atomic))
 			if remainingTokens <= midwayTarget {
-				datastrips[0] = filedata // replace the datastrips with the whole dataset
-				datastrips = datastrips[0:1]
 				reachedMidway = true
 			}
 		}
+		if !asset.fast && reachedMidway && asset.workType == 0 {
+			dataList = [][]byte{filedata}
+			usingFullDataset = true
+		} else {
+			dataList = datastrips
+			usingFullDataset = false
+		}
 
 		// Main tokenization loop
-		for _, data = range datastrips {
+		for _, data = range dataList {
 			// We increase the data length by 1 because we're always checking the next byte
 			lenData = len(data) // remember the true length
 			if cap(data) > len(data) { // this should be true because capcode copies it originally
@@ -1081,108 +1097,134 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 		}
 
 		// Copy the scores
-		scoresCopy := make([]uint32, vocabSize)
-		for i, _ = range scores {
-			scoresCopy[i] = scores[i].V
+		var scoresCopy []uint32
+		if asset.workType == 0 && reachedMidway {
+			scoresCopy = make([]uint32, vocabSize)
+			for i, _ = range scores {
+				scoresCopy[i] = scores[i].V
+			}
 		}
+		sortUint32Uint32.Asc(scores) // sort all the tokens by the number of characters they saved (their length * occurences)
+		var tokenResult [][]byte
 
 		// Determine tokens to delete
-		remainingTokens = int(atomic.LoadInt64(&remainingTokens_atomic))
-		sortUint32Uint32.Asc(scores) // sort all the tokens by the number of characters they saved (their length * occurences)
-		if fast {
-			switch {
-				case remainingTokens == 0: // reachedVocab, it'll be decided by master
-					divider = 10
-				case remainingTokens < vocabSize + (vocabSize / 4):
-					divider = 200
-				case remainingTokens < vocabSize + (vocabSize / 2):
-					divider = 150
-				case remainingTokens < vocabSize * 2:
-					divider = 100 	
-				case remainingTokens < midwayTarget / 6: 	// < 83,333
-					divider = 100 								
-				case remainingTokens < midwayTarget / 4: 	// < 125,000
-					divider = 100 								
-				case remainingTokens < midwayTarget / 2: 	// < 250,000
-					divider = 100 								
-				case remainingTokens < midwayTarget: 		// < 500,000 (below midwayTarget, the entire dataset is used for each run)
-					divider = 50 								
-				case remainingTokens < (midwayTarget*3)/2: // < 750,000
-					divider = 40 								
-				case remainingTokens < midwayTarget * 2: 	// < 1,000,000
-					divider = 30 								
-				case remainingTokens < midwayTarget * 4: 	// < 2,000,000
-					divider = 20 								
-				case remainingTokens < midwayTarget * 10: 	// < 5,000,000
-					divider = 10 							
-				default:										
-					divider = 10							// 10%
-			}
-		} else {
-			switch {
-				case remainingTokens == 0: // reachedVocab, it'll be decided by master
-					divider = 10
-				case remainingTokens < vocabSize + (vocabSize / 4):
-					divider = 2000 	
-				case remainingTokens < vocabSize + (vocabSize / 2):
-					divider = 1500
-				case remainingTokens < vocabSize * 2:
-					divider = 1000 	
-				case remainingTokens < midwayTarget / 6: 	// < 83,333
-					divider = 400 								
-				case remainingTokens < midwayTarget / 4: 	// < 125,000
-					divider = 300 								
-				case remainingTokens < midwayTarget / 2: 	// < 250,000
-					divider = 200 								
-				case remainingTokens < midwayTarget: 		// < 500,000 (below midwayTarget, the entire dataset is used for each run)
-					divider = 150 								
-				case remainingTokens < (midwayTarget*3)/2: // < 750,000
-					divider = 100 								
-				case remainingTokens < midwayTarget * 2: 	// < 1,000,000
-					divider = 80 								
-				case remainingTokens < midwayTarget * 4: 	// < 2,000,000
-					divider = 40 								
-				case remainingTokens < midwayTarget * 10: 	// < 5,000,000
-					divider = 20 							
-				default:										
-					divider = 10							// 10%
-			}
-		}
-		length = vocabSize / divider
-		if length < 2 {
-			length = 2
-		}
-		if length > vocabSize - 1 {
-			length = vocabSize - 1
-		}
-		tokensToRemove := make([][]byte, length)
-		index = 0
-		for i=0; i<length && i<len(scores); i++ {
-			if len(keys[scores[i].K]) == 1 { // don't try to remove single bytes
-				length++
-				continue
-			}
-			tokensToRemove[index] = keys[scores[i].K]
-			index++
-		}
-		tokensToRemove = tokensToRemove[0:index]
-		// Now check if these are still at 0 and if so includes all zeros
-		if i < len(scores) {
-			if scores[i].V == 0 {
-				for ; i < len(scores); i++ {
-					if scores[i].V > 0 {
-						break
-					}
-					if len(keys[scores[i].K]) == 1 { // don't try to remove single bytes
-						continue
-					}
-					tokensToRemove = append(tokensToRemove, keys[scores[i].K])
+		if asset.workType == 0 {
+			remainingTokens = int(atomic.LoadInt64(&remainingTokens_atomic))
+			if fast {
+				switch {
+					case remainingTokens == 0: // reachedVocab, it'll be decided by master
+						divider = 10
+					case remainingTokens < vocabSize + (vocabSize / 4):
+						divider = 200
+					case remainingTokens < vocabSize + (vocabSize / 2):
+						divider = 150
+					case remainingTokens < vocabSize * 2:
+						divider = 100 	
+					case remainingTokens < midwayTarget / 6: 	// < 83,333
+						divider = 100 								
+					case remainingTokens < midwayTarget / 4: 	// < 125,000
+						divider = 100 								
+					case remainingTokens < midwayTarget / 2: 	// < 250,000
+						divider = 100 								
+					case remainingTokens < midwayTarget: 		// < 500,000 (below midwayTarget, the entire dataset is used for each run)
+						divider = 50 								
+					case remainingTokens < (midwayTarget*3)/2: // < 750,000
+						divider = 40 								
+					case remainingTokens < midwayTarget * 2: 	// < 1,000,000
+						divider = 30 								
+					case remainingTokens < midwayTarget * 4: 	// < 2,000,000
+						divider = 20 								
+					case remainingTokens < midwayTarget * 10: 	// < 5,000,000
+						divider = 10 							
+					default:										
+						divider = 10							// 10%
+				}
+			} else {
+				switch {
+					case remainingTokens == 0: // reachedVocab, it'll be decided by master
+						divider = 10
+					case remainingTokens < vocabSize + (vocabSize / 4):
+						divider = 2000 	
+					case remainingTokens < vocabSize + (vocabSize / 2):
+						divider = 1500
+					case remainingTokens < vocabSize * 2:
+						divider = 1000 	
+					case remainingTokens < midwayTarget / 6: 	// < 83,333
+						divider = 400 								
+					case remainingTokens < midwayTarget / 4: 	// < 125,000
+						divider = 300 								
+					case remainingTokens < midwayTarget / 2: 	// < 250,000
+						divider = 200 								
+					case remainingTokens < midwayTarget: 		// < 500,000 (below midwayTarget, the entire dataset is used for each run)
+						divider = 150 								
+					case remainingTokens < (midwayTarget*3)/2: // < 750,000
+						divider = 100 								
+					case remainingTokens < midwayTarget * 2: 	// < 1,000,000
+						divider = 80 								
+					case remainingTokens < midwayTarget * 4: 	// < 2,000,000
+						divider = 40 								
+					case remainingTokens < midwayTarget * 10: 	// < 5,000,000
+						divider = 20 							
+					default:										
+						divider = 10							// 10%
 				}
 			}
+			length = vocabSize / divider
+			if length < 2 {
+				length = 2
+			}
+			if length > vocabSize - 1 {
+				length = vocabSize - 1
+			}
+			tokenResult = make([][]byte, length)
+			index = 0
+			for i=0; i<length && i<len(scores); i++ {
+				if len(keys[scores[i].K]) == 1 { // don't try to remove single bytes
+					length++
+					continue
+				}
+				tokenResult[index] = keys[scores[i].K]
+				index++
+			}
+			tokenResult = tokenResult[0:index]
+			// Now check if these are still at 0 and if so includes all zeros
+			if i < len(scores) {
+				if scores[i].V == 0 {
+					for ; i < len(scores); i++ {
+						if scores[i].V > 0 {
+							break
+						}
+						if len(keys[scores[i].K]) == 1 { // don't try to remove single bytes
+							continue
+						}
+						tokenResult = append(tokenResult, keys[scores[i].K])
+					}
+				}
+			}
+			log.Println(`Worker`, id, `completed run`, run, ` Score:`, formatInt(tokensInText))
+		} else {
+			// asset.workType 1 means we're looking for the best tokens instead of the worst
+			length = vocabSize - 1
+			tokenResult = make([][]byte, length)
+			i2 = 0
+			var b []byte
+			for i = length; i > 0; i-- {
+				b = keys[scores[i].K]
+				if len(b) <= 1 {
+					continue
+				}
+				if hasSpecial {
+					if _, found = specialMap[string(b)]; found {
+						continue
+					}
+				}
+				tokenResult[i2] = keys[scores[i].K]
+				i2++
+			}
+			tokenResult = tokenResult[0:i2]
 		}
 		// Return the result back to the master thread
-		channelResult <- resultStruct{testVocab, tokensInText, tokensToRemove, missingList, scoresCopy, reachedMidway}
-		log.Println(`Worker`, id, `completed run`, run, ` Score:`, formatInt(tokensInText))
+		channelResult <- resultStruct{testVocab, tokensInText, tokenResult, missingList, scoresCopy, usingFullDataset, asset.workType}
 		run++
     }
 }
@@ -1249,7 +1291,7 @@ func main() {
     flagRequired("dictionary", dictionaryFilename)
     flagRequired("dir", resultsDir)
 
-	if excludeOtherBytes && !include256bytes && !include128bytes && !includeASCIIbytes && !includeUTF8bytes {
+	if excludeOtherBytes && !include256bytes && !include128bytes && !includeASCIIbytes && !includeUTF8bytes &&!includeExtendedbytes {
 		fmt.Fprintln(os.Stderr, "To exclude-other-bytes you need to have included some bytes.")
 		os.Exit(1)
 	}
@@ -1274,6 +1316,28 @@ func main() {
 	}
 
 	fmt.Println(`Loading`, dictionaryFilename)
+
+	{
+		fileInfo, err := os.Stat(dictionaryFilename)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Dictionary file does not exist:", dictionaryFilename)
+			os.Exit(1)
+		}
+		if fileInfo.IsDir() {
+			dirEntries, err := os.ReadDir(dictionaryFilename)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Error", err)
+				os.Exit(1)
+			}
+			for _, entry := range dirEntries {
+				if !entry.IsDir() && strings.HasPrefix(entry.Name(), "interval_") {
+					dictionaryFilename = filepath.Join(dictionaryFilename, entry.Name())
+					fmt.Println(`Found interval file:`, dictionaryFilename)
+					break
+				}
+			}
+		}
+	}
 
 	// Load the big dictionary of all the tokens from the dataset
 	var tokens [][]byte
@@ -1355,8 +1419,8 @@ func main() {
 		}
 		specialTokens = specialTokens[0:on]
 		hasSpecial = true
-		specialMap = make(map[string]bool)
 	}
+	specialMap = make(map[string]bool)
 
 	switch charsetFlag {
 		case 0:
@@ -1425,28 +1489,75 @@ func main() {
 		}
 	}
 
-	fmt.Println(`Loading`, datasetFilename)
-
-	// Trim trailing slashes from resultsDir and create it if it does not exist
-	for len(resultsDir) > 0 && os.IsPathSeparator(resultsDir[len(resultsDir)-1]) {
-		resultsDir = resultsDir[:len(resultsDir)-1]
-	}
-	if _, err = os.Stat(resultsDir); os.IsNotExist(err) {
-		os.MkdirAll(resultsDir, 0755)
-	}
-	resultsDir = resultsDir + string(filepath.Separator)
-
 	// Vars
 	rand.Seed(time.Now().UnixNano())
 	var i, i2, to, remainingTokens, best1percent, uniqueFileNumber, noNewBest, interval10, removed, shuffles, zeroRemoved int
-	var exists, hasTokensToRemove, reachedMidway, withinVocabX2, reachedVocab, justReset bool
-	var lastIntervalFileName, debugStr, finalRunFilename string
+	var exists, hasTokensToRemove, reachedMidway, withinVocabX2, reachedVocab, justReset, addTokens bool
+	var lastIntervalFileName, debugStr, finalRunFilename, doubleVocabFilename string
 	var key []byte
+	var doubletokens, intervalTokens [][]byte
+	var double1, double2 [][]byte
 	var hash uint64
 	var c byte
 	tokensToRemove := new(pansearch.Counter)
 	dictsWithin1percent := make([]bestStruct, 0, 100)
 	var best int = MAXINT
+
+	// Trim trailing slashes from resultsDir and create it if it does not exist
+	{
+		for len(resultsDir) > 0 && os.IsPathSeparator(resultsDir[len(resultsDir)-1]) {
+			resultsDir = resultsDir[:len(resultsDir)-1]
+		}
+		fileInfo, err := os.Stat(resultsDir)
+		if os.IsNotExist(err) {
+			// Directory does not exist, create it
+			err := os.MkdirAll(resultsDir, 0755)
+			if err != nil {
+				fmt.Printf("Error creating directory: %s\n", err)
+				os.Exit(1)
+			}
+		} else if err != nil {
+			// Error occurred while checking the directory
+			fmt.Printf("Error checking directory: %s\n", err)
+			os.Exit(1)
+		} else if !fileInfo.IsDir() {
+			// The path exists, but it is not a directory
+			fmt.Printf("%s is not a directory\n", resultsDir)
+			os.Exit(1)
+		}
+		resultsDir = resultsDir + string(filepath.Separator)
+
+		// Check results dir for existing files
+		files, err := ioutil.ReadDir(resultsDir)
+		if err != nil {
+			panic(err)
+		}
+		for _, file := range files {
+			fpath := filepath.Join(resultsDir, file.Name())
+			if strings.HasPrefix(file.Name(), `doublevocab_`) {
+				_, _, _, _, _, doubletokens, err = loadTokensFromFile(fpath)
+				if err != nil {
+					fmt.Printf("Error: %s\n", err)
+					os.Exit(1)
+				}
+				addTokens = true
+				doubleVocabFilename = fpath
+				fmt.Println(`Found existing doublevocab file:`, file.Name())
+			} else if strings.HasPrefix(file.Name(), `finalrun_`) {
+				finalRunFilename = fpath
+				fmt.Println(`Found existing finalrun file:`, file.Name())
+			} else if strings.HasPrefix(file.Name(), `interval_`) {
+				fmt.Println(`Found existing interval file:`, file.Name())
+				_, _, _, _, _, tokens, err = loadTokensFromFile(fpath)
+				if err != nil {
+					fmt.Printf("Error: %s\n", err)
+					os.Exit(1)
+				}
+				numberPart := string(file.Name()[strings.Index(file.Name(), "_")+1 : strings.Index(file.Name(), ".")])
+				fmt.Println(`Resuming from interval file with`, numberPart, `tokens`)
+			}
+		}
+	}
 
 	// Build the ungreedy preference lookup table
 	// If there are multiple options of ungreedy alternative, these are the preferred points
@@ -1461,6 +1572,7 @@ func main() {
 		}
 	}
 
+	fmt.Println(`Loading`, datasetFilename)
 	// Load the text & normalize UTF8
 	var filedata []byte
 	{
@@ -1528,8 +1640,8 @@ func main() {
 		}
 	}
 
-	// This section resumes the final run given one of the final run files, it's only here because I needed to do that when testing
-	// Usually you would redo the final run from the finalrun file but you can use this to make it continue checking from the be
+	// This section resumes the final run given one of the final outfiles as input
+	// Better to let it resume naturally though
 	if len(tokens) <= vocabSize {
 		if nscore, is := detectSavedFinal(dictionaryFilename); is {
 			best = int(nscore)
@@ -1563,23 +1675,25 @@ func main() {
 			}
 			uniqueTokens.Build()
 			tokens = uniqueTokens.Keys() // this is all the tokens that are present in those within 1% of the best score
-			log.Println(`Resuming final run from score`, best)
+			intervalTokens = nil
+			log.Println(`Resuming final run from score`, formatInt(best), `with`, formatInt(len(tokens)), `tokens`)
 		}
 	}
 
-	// Remove tokens that include any of the special tokens inside of them
-	// This stops the tokenizer from ever skipping a special token
-	// Don't let any normal tokens contain special tokens
+	// Remove Special tokens
 	for _, special := range specialTokens {
 		specialMap[string(special)] = true
-		i++
-		for i, tok := range tokens {
+		for idx, tok := range tokens {
 			if bytes.Contains(tok, special) {
-				tokens[i] = nil
+				tokens[idx] = nil
+			}
+		}
+		for idx, tok := range doubletokens {
+			if bytes.Contains(tok, special) {
+				doubletokens[idx] = nil
 			}
 		}
 	}
-
 	// Remove deleted and separate single byte tokens (they are added to every vocabulary)
 	i2 = 0
 	for _, tok := range tokens {
@@ -1595,6 +1709,16 @@ func main() {
 			i2++
 		}
 	}
+	tokens = tokens[0:i2]
+	i2 = 0
+	for _, tok := range doubletokens {
+		if len(tok) <= 1 {
+			continue
+		}
+		doubletokens[i2] = tok
+		i2++
+	}
+	doubletokens = doubletokens[0:i2]
 	if usingCapcode {
 		includeBytes[capcode.DeleteToken] = true
 	} else {
@@ -1602,7 +1726,6 @@ func main() {
 			includeBytes[capcode.NoCapcodeDeleteToken] = true
 		}
 	}
-	tokens = tokens[0:i2]
 	var singleChars [][]byte
 	for i=0; i<256; i++ {
 		if includeBytes[i] {
@@ -1612,13 +1735,23 @@ func main() {
 	
 	// How many tokens are there?
 	vocabsTried := make(map[uint64]bool)
-	//if (!usingCapcode && len(singleChars) < 256) || len(singleChars) < 233 {
-	//	nUnk = 1
-	//}
 	vocabDiff := len(singleChars) + len(specialTokens) // not including nUnk on purpose
 	vocabSizeEffective := vocabSize - vocabDiff
+	if len(intervalTokens) >= vocabSizeEffective {
+		tokens = intervalTokens // replace regular tokens with interval tokens for resume
+	}
 	remainingTokens = len(tokens)
-	remainingTokens_atomic = int64(remainingTokens + vocabDiff) // still single-threaded here
+	if !reachedVocab {
+		remainingTokens_atomic = int64(remainingTokens + vocabDiff) // still single-threaded here
+	}
+
+	// In case of resuming set the vars
+	if remainingTokens <= vocabSize * 2 {
+		withinVocabX2 = true
+	}
+	if remainingTokens <= midwayTarget {
+		reachedMidway = true
+	}
 
 	// Launch the worker threads
 	for i=0; i<workers; i++ {
@@ -1633,121 +1766,129 @@ func main() {
 				break
 			}
 
-			// If there are any missing characters, add them to the list
-			if len(result.missing) != 0 {
-				singleChars, i = mergeBytes(singleChars, result.missing)
-				if i > 0 {
-					//nUnk = 0
-					//if (!usingCapcode && len(singleChars) < 256) || len(singleChars) < 233 {
-					//	nUnk = 1
-					//}
-					vocabDiff = len(singleChars) + len(specialTokens)
-					vocabSizeEffective = vocabSize - vocabDiff
-					log.Println(i, `missing character(s) found and added to reserved tokens`)
-				}
-			}
-
-			// Save all dictionaries within 10% of the best performing one
-			if withinVocabX2 && result.usingFullDataset { // if we're within 2x the vocabSize
-				if result.tokensInText < best {
-					best = result.tokensInText
-					best1percent = best + (best / 100)
-					noNewBest = 0
-					log.Println(`New best score`, formatInt(best))
-					i = 0
-					for _, v := range dictsWithin1percent {
-						if v.tokens > best1percent {
-							os.Remove(v.filename)
-						} else {
-							dictsWithin1percent[i] = v
-							i++
-						}
-					}
-					dictsWithin1percent = dictsWithin1percent[0:i]
+			if result.workType == 1 {
+				// workType 1: add tokens, but save for later
+				if len(double1) == 0 {
+					double1 = result.tokensToRemove
 				} else {
-					noNewBest++
+					double2 = result.tokensToRemove
 				}
-				if result.tokensInText < best1percent {
-					filename := resultsDir + conv.String(result.tokensInText) + "_" + conv.String(uniqueFileNumber) + ".tok"
-					uniqueFileNumber++
-					err = saveTokensToFile(filename, result.testVocab.Keys(), nil, nil, result.scores, len(filedata))
-					if err != nil {
-						panic(err)
+			} else {
+				// workType 0: remove tokens
+				// If there are any missing characters, add them to the list
+				if len(result.missing) != 0 {
+					singleChars, i = mergeBytes(singleChars, result.missing)
+					if i > 0 {
+						vocabDiff = len(singleChars) + len(specialTokens)
+						vocabSizeEffective = vocabSize - vocabDiff
+						log.Println(i, `missing character(s) found and added to reserved tokens`)
 					}
-					dictsWithin1percent = append(dictsWithin1percent, bestStruct{result.tokensInText, filename})
 				}
-			}
 
-			if reachedVocab {
-				if noNewBest >= keepTrying {
-					log.Println(`-- FINISHED --`)
-					fmt.Println(`No new best score in`, noNewBest, `runs`)
-					fmt.Println(`Best result tokenized`, formatInt(len(filedata)), `bytes with`, formatInt(best), `tokens`)
-					fmt.Println(`Average`, string(conv.FloatBytes(float64(len(filedata)) / float64(best), 3)), `characters/token`)
-					fmt.Println(`Best result:`)
-					for _, v := range dictsWithin1percent {
-						if v.tokens > best1percent {
-							os.Remove(v.filename) // delete everything not in the top 1%
-						} else {
-							if v.tokens == best {
-								fmt.Println(` `, v.filename) // output the filesnames of all those that are the best, which may be more than 1
+				// Save all dictionaries within 10% of the best performing one
+				if withinVocabX2 && result.usingFullDataset { // if we're within 2x the vocabSize
+					if result.tokensInText < best {
+						best = result.tokensInText
+						best1percent = best + (best / 100)
+						noNewBest = 0
+						log.Println(`New best score`, formatInt(best))
+						i = 0
+						for _, v := range dictsWithin1percent {
+							if v.tokens > best1percent {
+								os.Remove(v.filename)
+							} else {
+								dictsWithin1percent[i] = v
+								i++
 							}
 						}
+						dictsWithin1percent = dictsWithin1percent[0:i]
+					} else {
+						noNewBest++
 					}
-					os.Exit(0)
+					if result.tokensInText < best1percent {
+						filename := resultsDir + conv.String(result.tokensInText) + "_" + conv.String(uniqueFileNumber) + ".tok"
+						uniqueFileNumber++
+						err = saveTokensToFile(filename, result.testVocab.Keys(), nil, nil, result.scores, len(filedata))
+						if err != nil {
+							panic(err)
+						}
+						dictsWithin1percent = append(dictsWithin1percent, bestStruct{result.tokensInText, filename})
+					}
 				}
-				if best != result.tokensInText && len(result.tokensToRemove) > 0 {
-					temp := remainingTokens - vocabSizeEffective
-					switch  {
-						case temp < 50:
-							i2 = 1
-						case temp < 100:
-							i2 = 2
-						case temp < 200:
-							i2 = 3
-						case temp < 300:
-							i2 = 4
-						case temp < 400:
-							i2 = 6
-						case temp < 500:
-							i2 = 8
-						case temp < 750:
-							i2 = 10
-						case temp < 1000:
-							i2 = 20
-						case temp < 2000:
-							i2 = 30
-						case temp < 2500:
-							i2 = 40
-						case temp < 3000:
-							i2 = 50
-						default:
-							i2 = 100
+
+				if reachedVocab {
+					if noNewBest >= keepTrying {
+						log.Println(`-- FINISHED --`)
+						fmt.Println(`No new best score in`, noNewBest, `runs`)
+						fmt.Println(`Best result tokenized`, formatInt(len(filedata)), `bytes with`, formatInt(best), `tokens`)
+						fmt.Println(`Average`, string(conv.FloatBytes(float64(len(filedata)) / float64(best), 3)), `characters/token`)
+						fmt.Println(`Best result:`)
+						for _, v := range dictsWithin1percent {
+							if v.tokens > best1percent {
+								os.Remove(v.filename) // delete everything not in the top 1%
+							} else {
+								if v.tokens == best {
+									fmt.Println(` `, v.filename) // output the filesnames of all those that are the best, which may be more than 1
+								}
+							}
+						}
+						os.Exit(0)
 					}
-					if result.tokensInText > best1percent {
-						i2 += 2
+					if best != result.tokensInText && len(result.tokensToRemove) > 0 {
+						temp := remainingTokens - vocabSizeEffective
+						switch  {
+							case temp < 25:
+								i2 = 2
+							case temp < 50:
+								i2 = 3
+							case temp < 100:
+								i2 = 4
+							case temp < 200:
+								i2 = 5
+							case temp < 300:
+								i2 = 6
+							case temp < 400:
+								i2 = 8
+							case temp < 500:
+								i2 = 10
+							case temp < 750:
+								i2 = 15
+							case temp < 1000:
+								i2 = 20
+							case temp < 2000:
+								i2 = 30
+							case temp < 2500:
+								i2 = 40
+							case temp < 3000:
+								i2 = 50
+							default:
+								i2 = 100
+						}
+						if result.tokensInText > best1percent {
+							i2 += 4
+						}
+						if fast {
+							i2 *= 2
+						}
+						i2 = branchless.Min(i2 + zeroRemoved, len(result.tokensToRemove))
+						for i=0; i<i2; i++ {
+							tokensToRemove.Add(result.tokensToRemove[i], 1)
+						}
+						hasTokensToRemove = true
 					}
-					if fast {
-						i2 *= 2
+				} else { // add tokens to remove
+					if best != result.tokensInText {
+						for _, v := range result.tokensToRemove {
+							tokensToRemove.Add(v, 1)
+						}
+						hasTokensToRemove = true
 					}
-					i2 = branchless.Min(i2 + zeroRemoved, len(result.tokensToRemove))
-					for i=0; i<i2; i++ {
-						tokensToRemove.Add(result.tokensToRemove[i], 1)
-					}
-					hasTokensToRemove = true
-				}
-			} else { // add tokens to remove
-				if best != result.tokensInText {
-					for _, v := range result.tokensToRemove {
-						tokensToRemove.Add(v, 1)
-					}
-					hasTokensToRemove = true
 				}
 			}
 
 		default:
 			// no values left in the channel
-			if hasTokensToRemove { // if there are any tokens to cull
+			if hasTokensToRemove || remainingTokens < vocabSizeEffective { // if there are any tokens to cull
 				tokensToRemove.Build()
 				remainingTokens = 0
 				removed = 0
@@ -1787,16 +1928,23 @@ func main() {
 					reachedMidway = true
 				}
 				if remainingTokens <= vocabSize * 2 && !withinVocabX2  {
-					saveTokensToFile(resultsDir + `doublevocab_` + conv.String(remainingTokens + vocabDiff) + `.tok`, tokens, specialTokens, singleChars, nil, len(filedata))
+					doubleVocabFilename = resultsDir + `doublevocab_` + conv.String(remainingTokens + vocabDiff) + `.tok`
+					saveTokensToFile(doubleVocabFilename, tokens, specialTokens, singleChars, nil, len(filedata))
+					doubletokens = make([][]byte, len(tokens))
+					for i, v := range tokens {
+						doubletokens[i] = v
+					}
 					log.Println(`Reached 2x vocab size`)
 					withinVocabX2 = true
+					addTokens = true
 				}
 				justReset = false
+				// Reached the end?
 				if remainingTokens < vocabSizeEffective || shuffles == 10000 { // its okay to do this multiple times
 					log.Println(`Reached vocab size`)
 					// Now make the the final tokens, from all the tokens that are present in all tokensets that are within 1% of the best score
-					if reachedVocab { // second time
-						uniqueTokens := new(pansearch.Counter)
+					uniqueTokens := new(pansearch.Counter)
+					if len(finalRunFilename) > 0 { // second time
 						_, _, _, _, _, toks, err := loadTokensFromFile(finalRunFilename)
 						if err != nil {
 							panic(err)
@@ -1816,10 +1964,11 @@ func main() {
 								}
 							}
 						}
+						for _, b := range tokens {
+							uniqueTokens.Add(b, 1)
+						}
 						uniqueTokens.Build()
-						tokens = uniqueTokens.Keys()
 					} else { // first time
-						uniqueTokens := new(pansearch.Counter)
 						for _, v := range dictsWithin1percent {
 							if v.tokens < best1percent {
 								_, _, _, _, _, toks, err := loadTokensFromFile(v.filename)
@@ -1848,9 +1997,71 @@ func main() {
 						noNewBest = 0
 						finalRunFilename = resultsDir + `finalrun_` + conv.String(len(tokens) + vocabDiff) + `.tok`
 						saveTokensToFile(finalRunFilename, tokens, specialTokens, singleChars, nil, len(filedata))
-						reachedVocab = true
-						atomic.StoreInt64(&remainingTokens_atomic, 0)
 					}
+					// Add from double tokens
+					addlist := make([][]byte, 0, 1000)
+					n := (uniqueTokens.Len() - vocabSizeEffective) / 2
+					if hasSpecial {
+						i = 0
+						for _, b := range double1 {
+							if len(b) > 1 {
+								if _, exists = specialMap[string(b)]; !exists {
+									if _, exists = uniqueTokens.Find(b); !exists {
+										addlist = append(addlist, b)
+										if i++; i >= n {
+											break
+										}
+									}
+								}
+							}
+						}
+						i = 0
+						for _, b := range double2 {
+							if len(b) > 1 {
+								if _, exists = specialMap[string(b)]; !exists {
+									if _, exists = uniqueTokens.Find(b); !exists {
+										addlist = append(addlist, b)
+										if i++; i >= n {
+											break
+										}
+									}
+								}
+							}
+						}
+					} else {
+						i = 0
+						for _, b := range double1 {
+							if len(b) > 1 {
+								if _, exists = uniqueTokens.Find(b); !exists {
+									addlist = append(addlist, b)
+									if i++; i >= n {
+										break
+									}
+								}
+							}
+						}
+						i = 0
+						for _, b := range double2 {
+							if len(b) > 1 {
+								if _, exists = uniqueTokens.Find(b); !exists {
+									addlist = append(addlist, b)
+									if i++; i >= n {
+										break
+									}
+								}
+							}
+						}
+					}
+					for _, b := range addlist {
+						uniqueTokens.Add(b, 1)
+					}
+					double1 = nil
+					double2 = nil
+					addTokens = true
+					uniqueTokens.Build()
+					tokens = uniqueTokens.Keys()
+					reachedVocab = true
+					atomic.StoreInt64(&remainingTokens_atomic, 0)
 					log.Println(`Determining best combination of`, formatInt(len(tokens) + vocabDiff), `tokens`)
 					justReset = true
 				}
@@ -1872,6 +2083,45 @@ func main() {
 					}
 				}
 			}
+
+			// Check for add tokens
+			if addTokens {
+				addTokens = false
+				if (len(doubletokens) >= vocabSizeEffective) {
+					shuffle(doubletokens)
+					testVocab1 := new(pansearch.Fast)
+					testVocab2 := new(pansearch.Fast)
+					// Add single character tokens to every vocabulary
+					for _, v := range singleChars {
+						testVocab1.Add(v)
+						testVocab2.Add(v)
+					}
+					// Add special tokens
+					for _, v := range specialTokens {
+						testVocab1.Add(v)
+						testVocab2.Add(v)
+					}
+					// Add regular tokens
+					for i=0; i<vocabSizeEffective; i++ {
+						testVocab1.Add(doubletokens[i])
+					}
+					to = vocabSizeEffective * 2
+					for ; i<to && i<len(doubletokens); i++ {
+						testVocab2.Add(doubletokens[i])
+					}
+					if len(doubletokens) < to {
+						to -= len(doubletokens)
+						for i=0; i<to; i++ {
+							testVocab2.Add(doubletokens[i])
+						}
+					}
+					testVocab1.Build()
+					testVocab2.Build()
+					channelWork <- workStruct{testVocab1, 1, true}
+					channelWork <- workStruct{testVocab2, 1, true}
+				}
+			}
+
 			// Shuffle the dictionary and send it out to the workers
 			shuffles = 0
 			for atLeast1UniqueVocab := false; !atLeast1UniqueVocab; { // keep trying until at least 1 vocabulary is generated
@@ -1932,13 +2182,12 @@ func main() {
 								}
 								hash = (hash ^ 11400714819323198485) * 1099511628211 // end of string hash
 							}
-							if _, exists = vocabsTried[hash]; !exists {
-								vocabsTried[hash] = true
-							}
+							_, exists = vocabsTried[hash]
 						}
 					}
 					if !exists { // if not already seen
-						channelWork <- testVocab // send the dictionary to the worker channel
+						channelWork <- workStruct{testVocab, 0, false} // send the dictionary to the worker channel
+						vocabsTried[hash] = true
 						atLeast1UniqueVocab = true
 					}
 				}
