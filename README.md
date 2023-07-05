@@ -1,16 +1,16 @@
 # TokenMonster
 
-TokenMonster is a highly optimized, state-of-the-art tokenization library, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
+TokenMonster is an ungreedy tokenizer and vocabulary generator, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
-TokenMonster is an ungreedy tokenizer and vocabulary generator, built from the ground up using custom data structures and branchless logic.
+Large and sub-optimal vocabularies lead to the waste of computational and memory resources in language models. By switching to TokenMonster, you can potentially achieve the same or better performance with a vocabulary that is half or even a quarter of the size.
 
-TokenMonster can train and generate an optimal vocabulary on a 1GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
+TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to increase the inference speed and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by over 50%. [See for yourself](https://bot.co/tokenmonster/).
+TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by over 50%. [See for yourself](https://bot.co/tokenmonster/).
 
 ## Features
 - Outperforms other tokenization algorithms in every area ([benchmark](./benchmark))
@@ -36,12 +36,12 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 * [Benchmark](./benchmark)
 * [Prebuilt Vocabularies](#prebuilt-vocabularies)
 * [Optimization Modes](#optimization-modes)
-* [Datasets](#datasets)
+* [Vocabulary Selection Guidance](#vocabulary-selection-guidance)
 * [Capcode](#capcode)
 * [Normalization](#normalization)
-* [Which Vocabulary To Choose](#which-vocabulary-to-choose)
 * [How does it work and how is it different from BPE?](#how-does-it-work-and-how-is-it-different-from-bpe)
 * [The Ungreedy Tokenization Algorithm](#the-ungreedy-tokenization-algorithm)
+* [Datasets](#datasets)
 * [Support & Consultation](#support--consultation)
 
 ## Prebuilt Vocabularies
@@ -71,13 +71,81 @@ All the optimization modes are lossless. The stricter the optimization mode (hig
 
 `0 unfiltered` allows the training process to freely determine the tokens. `clean` is preferred in almost every case, because `unfiltered` tends to result in overfitting, especially for code as it results in tokens for things like `\n\t\t\t\tif (`. Use `unfiltered` for tokenizing language or data that does not use spaces as word boundaries.
 
-`1 clean` introduces filters to avoid overitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
+`1 clean` introduces filters to avoid overfitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
 
 `2 balanced` prioritizes whole words and attempts to dissuade the vocabulary from doing things that are difficult to learn, such as using a delete forward marker at the end of a token.
 
 `3 consistent` is a looser version of `strict`. It aims to limit the number of different tokens that can represent the same word or phrase, and doesn't allow for open-close delimeters to be combined with words or each other. Numbers also become limited to fewer variants.
 
 `4 strict` aims to have only 1 token per word, no matter how it is encoded. For example `However`, ` however,` and `HOWEVER!` will all use the same ` however` token, in combination with other tokens that indicate it's spacing and capitalization.
+
+## Vocabulary Selection Guidance
+
+Based on my experience, there is a "sweet spot" for a vocabulary size to get the most out of your model. It's tempting to use large vocabularies, which has been norm, but you can see on the [TokenMonster Tester](https://bot.co/tokenmonster/) that reducing the vocabulary by 50% or even 75% can often result in only a relatively minor increase the number of tokens required to tokenize it. Even the very general `englishcode` vocabularies, which are for all intents and purposes multi-lingual, do very well at vocab size `24000`. Story or article writing models could easily get away with `16000` or even `8000`.
+
+TokenMonster works well with small vocabularies because it's using an optimal selection process. In most cases it's simply not necessary to use vocabulary sizes greater than `40000`, unless it's a multi-lingual vocabulary. More is not better. Using a vocabulary that is excessively large can lead to inefficient usage of embeddings, not to mention an over-complicated grammar. The embeddings for all those unneeded tokens occupy memory and computational resources that could be used more efficiently.
+
+In my opinion, the 100K vocabulary size that OpenAI uses is excessive, unless your aim is to support at least three languages in the same vocabulary. With a 100K size, you're likely to have "spare" tokens. By "spare", I mean that the vocabulary starts assigning tokens to lengthy, specific sequences like "limitations under the License" and "#### According to". This doesn't happen at lower vocabulary sizes, but it is prevalent at 100K size for English, suggesting that the vocabulary has reached its optimal size and is now just compressing frequently occurring strings.
+
+My advice is to find the smallest vocabulary size that meets your requirements. With this, you can either be content with a smaller, faster model, or opt to augment the size of the embeddings accordingly, or find a balance between the two.
+
+In regards to optimization modes, `strict` is the one to go for if your model is limited by its size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given that the simpler grammar is quicker to learn (words, punctuation and modifiers are all separate tokens.) On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
+
+`strict` performs very well with longform natural text, such as novels and articles, but it's too strict for code. `consistent` will give the best balance of consistency for tokenizing code whilst keeping the grammar simple. `balanced` and `clean` are excellent at compressing code into fewer tokens, but this comes with the trade-off of complex grammar. I'd therefore recommend `consistent` for most code generating models.
+
+## Capcode
+
+[Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text, supporting all UTF-8 characters. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. In theory, capcode makes it easier for a model to learn the meaning of words. Additionally, capcode makes for more efficient tokenization because it frees up so many tokens that would otherwise be used for uppercase variants of already existing lowercase tokens.
+
+## Normalization
+
+TokenMonster is designed to be plug-and-play, taking care of normalization concerns for you. UTF-8 and UTF-16 vocabularies are automatically NFD normalized and encoded Little Endian regardless of architecture. When tokenizing, the exact same transformations are applied transparently, so you can pass a string to either UTF-8 or UTF-16 vocabularies, with or without capcode, and on either Little or Big Endian architecture, and it will be processed correctly.
+
+No normalizations are applied to charset "None" vocabularies. If you're not sure which to choose, UTF-8 is preferred.
+
+## How does it work and how is it different from BPE?
+
+Byte-Pair-Encoding starts with single byte tokens and merges frequently occuring tokens together iteratively, growing the vocabulary out of single characters. TokenMonster takes an entirely different approach, beginning with all possible tokens, and distilling the vocabulary down to the vocab size using a method inspired by chemical distillation. TokenMonster thereby does not run into the issue BPE has, that once a branch is chosen, it's assumed to be beneficial, and although it can later be pruned, the alternative branch that might have performed better has already been lost.
+
+The secret sauce that enables TokenMonster to outperform other algorithms is made from:
+1. The distillation method is an effective means of separating that which is wanted from that which is not, without losing any of the cream.
+2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm and dataset, which is a necessary step for optimal tokenization.
+
+In simplified terms it does the following:
+- Generates all possible tokens in the dataset (40 billion in 1 GB of text)
+- Deletes all tokens that have no more than 100 occurrences (4 million)
+- Generates random vocabularies of vocab_size
+- Tokenizes the dataset using the target tokenization algorithm with the random vocabulary
+- Deletes the 1% "worst" scoring tokens
+- Repeat hundreds of thousands of times
+- When vocab_size is reached, resurrect potential tokens
+- Keep doing this until a more optimal vocabulary cannot be found 1000 times in a row
+
+TokenMonster does not need any information about the language or structure, and results in a neat list of words, subwords and common phrases. Sample:
+```
+a number of 
+a series of 
+a wonderful 
+ability and 
+able to get 
+about being 
+about their 
+account for 
+acknowledge 
+acquisition 
+addition to 
+address the 
+advertising 
+affected by 
+after being 
+against the 
+```
+
+## The Ungreedy Tokenization Algorithm
+
+TokenMonster uses an ungreedy tokenization method in which each token has up to 2 alternatives selected during training, which are subwords of itself. First the longest token that matches the next segment of text is selected in a greedy fashion. The alternative tokens are looked up on an index that is included in the vocabulary file. The longest token matching the following text segment is found for the original and its alternatives, giving 3 possible branches. If any of those do not end on a word boundary, a further branch is followed utilizing a forward delete token, which allows for words beginning with a space to be used as parts of other words. The 6 total branches are scored based on various rules, the optimal branch is chosen and the tokenization continues along that branch.
+
+Because the training process targets the tokenization algorithm, the training is not only selecting for tokens but selecting for the relationship between tokens in the vocabulary.
 
 ## Datasets
 
@@ -150,75 +218,6 @@ The following programming and markup languages are represented in both "englishc
 | Lua          | Makefile     | Markdown     | PHP          | Perl         |
 | PowerShell   | Python       | Ruby         | Rust         | SQL          |
 | Scala        | Shell        | TypeScript   | TeX          | Visual Basic |
-
-
-## Capcode
-
-[Capcode](https://github.com/alasdairforsythe/capcode) is an alternative encoding for uppercase in UTF-8 text, supporting all UTF-8 characters. It's completely lossless, changing the way in which capital letters are encoded so they can share tokens with lowercase letters but without losing any information. In theory, capcode makes it easier for a model to learn the meaning of words. Additionally, capcode makes for more efficient tokenization because it frees up so many tokens that would otherwise be used for uppercase variants of already existing lowercase tokens.
-
-## Normalization
-
-TokenMonster is designed to be plug-and-play, taking care of normalization concerns for you. UTF-8 and UTF-16 vocabularies are automatically NFD normalized and encoded Little Endian regardless of architecture. When tokenizing, the exact same transformations are applied transparently, so you can pass a string to either UTF-8 or UTF-16 vocabularies, with or without capcode, and on either Little or Big Endian architecture, and it will be processed correctly.
-
-No normalizations are applied to charset "None" vocabularies. If you're not sure which to choose, UTF-8 is preferred.
-
-## Which Vocabulary To Choose
-
-There is a sweet spot for a vocabulary size, and it is probably around `24000` per "language" included in the vocabulary. This is true even for large models.
-
-In the first version of TokenMonster, the lowest vocabulary size was `32000`. In the second version I introduced `24000`. In the third version, I went as low as `1024`. I found I could keep going lower, and not suffer much reduction in compression. I recommend you compare them yourself on the [TokenMonster Tester](https://bot.co/tokenmonster/) webpage to get a feeling for it.
-
-It's my opinion that the 100K vocab size used by OpenAI is too large, unless you intend to support at least 3 languages in the same vocabulary. More is not better. At 100K the vocabulary has "spare" tokens. I'm defining having "spare" tokens as the point at which the vocabulary begins to allocate tokens to long and specific sequences, such as (real examples) "limitations under the License" and "#### According to". This does not happen at lower vocab sizes, but it does happen at 100K vocab size in English, which implies that the optimal vocabulary has already been reached and it's now just compressing frequently occurring strings.
-
-I would advise then, that you can attempt to keep the vocabulary size fairly low in most cases and either be happy with a smaller and faster model, or increase the size of the embeddings accordingly, or something in-between.
-
-In regards to optimization modes, `strict` is the one to go for if your model is limited by its size or largely undertrained. If it's a small model that isn't that clever, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given that the simpler grammar is quicker to learn (words, punctuation and modifiers are all separate tokens.) On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
-
-`strict` does very well for long bodies of natural text, such as novels and articles, but it's too strict for code. `consistent` will give the best balance of consistency for tokenizing code whilst keeping the grammar simple. `balanced` and `clean` are excellent at compressing code into fewer tokens, but the cost of this is a complex grammar. I'd therefore recommend `consistent` for most code generating models.
-
-## How does it work and how is it different from BPE?
-
-Byte-Pair-Encoding starts with single byte tokens and merges frequently occuring tokens together iteratively, growing the vocabulary out of single characters. TokenMonster takes an entirely different approach, beginning with all possible tokens, and distilling the vocabulary down to the vocab size using a method inspired by chemical distillation. TokenMonster thereby does not run into the issue BPE has, that once a branch is chosen, it's assumed to be beneficial, and although it can later be pruned, the alternative branch that might have performed better has already been lost.
-
-The secret sauce that enables TokenMonster to outperform other algorithms is made from:
-1. The distillation method is an effective means of separating that which is wanted from that which is not, without losing any of the cream.
-2. The training process targets the tokenization method being used. The vocabulary is generated to be optimal for the specific tokenization algorithm and dataset, which is a necessary step for optimal tokenization.
-
-In simplified terms it does the following:
-- Generates all possible tokens in the dataset (40 billion in 1 GB of text)
-- Deletes all tokens that have no more than 100 occurrences (4 million)
-- Generates random vocabularies of vocab_size
-- Tokenizes the dataset using the target tokenization algorithm with the random vocabulary
-- Deletes the 1% "worst" scoring tokens
-- Repeat hundreds of thousands of times
-- When vocab_size is reached, resurrect potential tokens
-- Keep doing this until a more optimal vocabulary cannot be found 1000 times in a row
-
-TokenMonster does not need any information about the language or structure, and results in a neat list of words, subwords and common phrases. Sample:
-```
-a number of 
-a series of 
-a wonderful 
-ability and 
-able to get 
-about being 
-about their 
-account for 
-acknowledge 
-acquisition 
-addition to 
-address the 
-advertising 
-affected by 
-after being 
-against the 
-```
-
-## The Ungreedy Tokenization Algorithm
-
-TokenMonster uses an ungreedy tokenization method in which each token has up to 2 alternatives selected during training, which are subwords of itself. First the longest token that matches the next segment of text is selected in a greedy fashion. The alternative tokens are looked up on an index that is included in the vocabulary file. The longest token matching the following text segment is found for the original and its alternatives, giving 3 possible branches. If any of those do not end on a word boundary, a further branch is followed utilizing a forward delete token, which allows for words beginning with a space to be used as parts of other words. The 6 total branches are scored based on various rules, the optimal branch is chosen and the tokenization continues along that branch.
-
-Because the training process targets the tokenization algorithm, the training is not only selecting for tokens but selecting for the relationship between tokens in the vocabulary.
 
 ## Support & Consultation
 

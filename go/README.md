@@ -1,11 +1,12 @@
-### [Click here for the complete documentation on pkg.go.dev.](https://pkg.go.dev/github.com/alasdairforsythe/tokenmonster/go)
+**[Click here for the complete documentation on pkg.go.dev.](https://pkg.go.dev/github.com/alasdairforsythe/tokenmonster/go)**
 
 ## Basic Usage
 
 ```
 import "github.com/alasdairforsythe/tokenmonster/go"
 
-func usage_example() {
+func example() {
+
 	vocab, err := tokenmonster.Load(vocabfilename)
 	if err != nil {
 		panic(err)
@@ -18,6 +19,7 @@ func usage_example() {
 	
 	decoder := vocab.NewDecoder()
 	decoded_text := decoder.Decode(tokens)
+
 }
 ```
 
