@@ -65,14 +65,14 @@ It's important to choose the correct settings, so I will go through them one by 
 
 ```
 Usage of ./getalltokens:
+  -capcode int
+        0 = disabled, 1 = deleteToken only, 2 = enabled (default 2)
   -charset string
-        one of: UTF-8, UTF-16, none (required)
-  -chunk-size int
+        one of: UTF-8, none (default UTF-8)
+  -chunk-size string
         the number of bytes processed at a time, higher is faster but requires more RAM (default 100MB)
   -dataset string
         filename of the dataset plain-text (required)
-  -disable-capcode
-        disables capcode normalizations (default false)
   -max-token-length int
         the maximum length of a token (default 40)
   -micro-chunks int
@@ -87,21 +87,50 @@ Usage of ./getalltokens:
         tokens will be trimmed if they occur less frequently than this per micro-chunk (default 2)
   -mode string
         0 = unfiltered, 1 = clean, 2 = balanced, 3 = consistent, 4 = strict (required)
+  -norm string
+        combine any of the following: NFD, lowercase, accents, quotemarks, collapse, trim, leadingspace, newlines (default NFD)
+  -only-latin
+        if enabled, tokens that contains letters must be in Latin script (default false)
+  -only-valid
+        if enabled, tokens must contain full and valid characters, except single byte tokens (default false)
   -output string
         output filename for the dictionary (required)
   -workers int
         number of worker threads to run (default 8)
 ```
 
+### -capcode
+
+Capcode which is an alternative encoding for upper-casing, which eliminates the need for separate lowercase and uppercase variants of the same word. `-capcode 2` is strongly recommended. For a language that doesn't use capitals, or for code only model, you can use level `-capcode 1`, which disables capcode but still uses the forward delete token. For languages or formats that don't use spaces as word separators, you can disable capcode completely with `-capcode 0`
+
 ### -charset
 
-Whilst this is called `-charset` it mostly affects the normalization. In most cases you should choose `-charset utf8`. `UTF-16` is experimental and does not support capcode.
+Enter `utf-8` if your dataset is in UTF-8 (probable) otherwise `None`. It affects some of the normalizations.
 
-On the other hand, if you are tokenizing something that is not a language and does not use words, for example a gene sequence, choose `-charset none`. Use `None` whenever you don't want spacing or characters to be normalized.
+### -norm
 
-### -disable-capcode
+Options are: `nfd` `lowercase` `accents` `quotemarks` `collapse` `trim` `leadingspace` `unixlines`
 
-If you choose `-charset utf8` this by default enables capcode, which is an alternative encoding for upper-casing. To disable capcode pass the `-disable-capcode` flag. You would want to disable capcode if your target language does not use capital letters, or if it's a code-only model. However, even with capcode disabled, `-charset UTF-8` will still be normalized for accents, word beginnings, number beginnings and use a forward delete token. To completely disable all normalization, use `-charset none`. 
+For efficient, lossless tokenization of UTF-8 text, choose `-norm NFD`. All other normalizations are lossy. The parameters you choose here will be applied automatically to the vocabulary and to any string that is tokenized with the vocabulary.
+
+- `nfd`: Applies NFD normalization to the UTF-8 text, which makes it more efficient to tokenize.
+- `lowercase`: Converts to lowercase.
+- `accents`: Removes accents, e.g. á → a
+- `quotemarks`: Converts curly quotes to ASCII quotes ‘’“” → ''""
+- `collapse`: Converts 2 or more sequential spaces to a single space (affects space character only)
+- `trim`: Removes whitespace from the beginning and end.
+- `leadingspace`: Adds a single space character at the beginning, if there isn't one already.
+- `unixlines`: Converts `/r/n` to `/n`
+
+These can be combined together, e.g. `-norm "lowercase collapse trim quotemarks unixlines"`
+
+### -only-latin
+
+If enabled, tokens may not contain characters from non-Latin scripts. If you only intend to tokenize Latin script, it's best to enable this. Characters in those scripts can still be tokenized from single byte tokens.
+
+### -only-valid
+
+If enabled, tokens may not contain invalid UTF-8. I recommend this in most cases.
 
 ### -mode
 
@@ -230,7 +259,7 @@ To include special tokens during training, `-special` refers to a JSON file in t
 
 ## Export vocabulary
 
-Once a vocabulary has been generated it's not yet in the vocabulary format, but is still just a list of tokens. To convert it to a vocabulary for use with the tokenizing libraries, you use `exportvocab`.
+Once a vocabulary has been generated it's not yet in the vocabulary format, it's still just a list of tokens. To convert it to a vocabulary for use with the tokenizing libraries, you use `exportvocab`.
 
 The standard usage is straightforward:
 ```
@@ -238,8 +267,11 @@ The standard usage is straightforward:
 ```
 This will automatically select the best vocabulary from `directory` (as generated by `trainvocab`) and output the final vocabulary to `file.vocab`.
 
-That's finished. However, there are other things you can do with `exportvocab`:
-
+Your vocabulary is now complete. However, you can do more with `exportvocab`. It can import and export to and from 3 formats: token files, TokenMonster vocabs, and YAML. For example, you can export a vocabulary in YAML format, order it with the highest scoring tokens at the top, and then open it with a text editor to see what the vocabulary looks like:
+```
+./exportvocab -input-vocab file.vocab -output-yaml file.yaml -order-by-score
+```
+You can also add tokens, resize the vocabulary, search the vocabulary, etc.
 ```
 Usage of ./exportvocab:
   -add-single-bytes string
@@ -248,31 +280,29 @@ Usage of ./exportvocab:
         a single special token to add to the vocabulary (optional)
   -delete-single-bytes
         deletes all the single byte tokens except those specified from add-single-bytes (optional)
-  -delimiter string
-        delimiter to use between each token for output-txt (optional) (default "\n")
   -exists string
         check if a token exists in the vocabulary (optional)
   -input string
         tokens file or directory from trainvocab, if directory it will load the best performing tokens file in the directory (optional)
-  -input-json string
-        filename of a JSON file containing tokens to add or delete, format: {"add":["ab","cd"],"special":["</eos>"],"delete":["cheese"]} (optional)
   -input-vocab string
         an existing TokenMonster vocabulary file (optional)
+  -input-yaml string
+        filename of a YAML file containing modifications or a new vocabulary (optional)
   -order-by-score
         orders output-txt by token score (descending) instead of alphabetically (optional) (default false)
   -output string
         filename of the vocabulary to output (optional)
   -output-tokens string
         converts a vocabulary back to a tokens file that can be used with trainvocab (optional)
-  -output-txt string
-        filename to export tokens in a text file for curiosity (optional)
+  -output-yaml string
+        filename to export the vocabulary in YAML format (optional)
+  -reset-token-ids
+        resets the IDs of the tokens to be sequential from zero (optional) (default false)
   -resize int
         resizes the vocabulary to this many tokens by deleting the worst scoring tokens (optional)
   -unk string
         set to true or false to enable or disable the UNK token (optional)
 ```
-
-You can input a tokens file with `-input` or an existing vocabulary file with `-input-vocab`. You can then make make various modifications and save it as either a vocabulary with `-output`, or back to a tokens file with `-output-tokens` (which can be used for training again), or as a text file with `-output-txt`.
 
 `-add-single-bytes` & `-add-special-token` allow you to add single-byte or special tokens. If you combine this with `-resize` you can also keep the vocabulary within a target size. For example, to add a special token to an existing vocabulary of size 10000, but not increase the vocabulary size, you could use:
 ```
@@ -285,3 +315,4 @@ You can input a tokens file with `-input` or an existing vocabulary file with `-
 ```
 ./exportvocab -input-vocab myvocab.vocab -exists " cheesecake"
 ```
+.
