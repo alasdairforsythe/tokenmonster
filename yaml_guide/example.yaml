@@ -8,14 +8,14 @@ charset: "utf-8"           # has no effect on an existing vocabulary
 capcode: 2                 # has no effect on an existing vocabulary
 normalization: "nfd"       # multiple normalizations can be applied: nfd lowercase accents quotemarks collapse trim leadingspace unixlines
 
-# The following variables will modify an existing vocabulary if present
+# The following variables will modify an existing vocabulary if present:
 include-256-bytes: false
 include-128-bytes: false
 include-utf8-bytes: false
 include-ascii-bytes: false
 include-extended-bytes: false
 exclude-other-bytes: false
-unk: true                  # whether to assigned an ID for an UNK token
+unk: true                  # whether to use an UNK token for missing characters
 unk-id: 20000              # optionally assign an ID to the UNK token (if exists)
 reset-token-ids: false     # if true, ids will be ignored and assigned from zero alphabetically
 
