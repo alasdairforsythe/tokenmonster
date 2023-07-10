@@ -100,7 +100,7 @@ class Uint8ArrayHashMap {
 function displayString1(key, capcode) {
   const decoder = new TextDecoder('utf-8');
   const keystr = decoder.decode(key);
-  if (capcode) {
+  if (capcode == 2) {
     const replacedString = keystr.replace(/("|\n|\r|\t| |W|D|C)/g, (match, capture) => {
       if (capture === '"') {
         return '&quot;';
@@ -144,7 +144,7 @@ function displayString1(key, capcode) {
 function displayString2(key, capcode) {
   const decoder = new TextDecoder('utf-8');
   const keystr = decoder.decode(key);
-  if (capcode) {
+  if (capcode == 2) {
     const replacedString = keystr.replace(/(\r\n|\n|\r|W|D|C)/g, (match, capture) => {
       if (capture === '\r\n') {
         return '↵\r\n';
@@ -181,27 +181,66 @@ function displayString2(key, capcode) {
 
 class TokenMonster {
   constructor() {
-    this.word2id = new Uint8ArrayHashMap();
+    this.word2index = new Uint8ArrayHashMap();
+    this.index2id = []
+    this.index2alternative = [];
+    this.index2alternative_length = [];
+    this.index2alternative2 = [];
+    this.index2alternative2_length = [];
+    this.index2flag = [];
+    this.index2nWords = [];
     this.id2word = [];
-    this.id2alternative = [];
-    this.id2alternative_length = [];
-    this.id2alternative2 = [];
-    this.id2alternative2_length = [];
-    this.id2flag = [];
-    this.max_token_len = 0;
-    this.charset = 0;
-    this.capcode = false;
-    this.useUnk = false;
-    this.customIDs = false;
-    this.id2nWords = [];
     this.id2string = [];
     this.id2display = [];
+    this.max_token_len = 0;
+    this.charset = 0;
+    this.capcode = 0;
+    this.normalization = 0;
+    this.useUnk = false;
     this.unk = 0;
     this.hasDeleteToken = false;
     this.deleteToken = 0;
   }
 
-  debug(id) {
+  normalize(text) {
+    const flag = this.normalization;
+    if (flag == 1) {
+      return text.normalize("NFD");
+    } else if (flag == 0) {
+      return text;
+    }
+    if (flag & 128 != 0) {
+      text = text.replace(/\r\n/g, '\n');
+    }
+    if (flag & 16 != 0) {
+      text = text.replace(/ {2,}/g, ' ');
+    }
+    if (flag & 8 != 0) {
+      text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
+    }
+    if (flag & 32 != 0) {
+      text = text.trim();
+    }
+    if (flag & 64 != 0) {
+      text = text.startsWith(' ') ? text : ' ' + text;
+    }
+    if (flag & 4 != 0) {
+      text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    }
+    if (flag & 2 != 0) {
+      text = text.toLowerCase();
+    }
+    if (flag & 1 != 0) {
+      text = text.normalize("NFD");
+    }
+    return text;
+  }
+
+  debug(index) {
+    if (index === undefined) {
+      return "";
+    }
+    const id = this.index2id[index];
     const decoded = new Uint8Array(this.id2word[id].length);
     decoded.set(this.id2word[id], 0);
     const decoder = new TextDecoder('utf-8');
@@ -312,103 +351,93 @@ class TokenMonster {
     }
     const dataView = new DataView(buffer);
 
-    // Read capcode var
-    switch (dataView.getUint8(0)) {
-      case 0:
-        this.capcode = false;
-        break;
-      case 1:
-        this.capcode = true;
-        break;
-      default:
-        throw new Error('Invalid TokenMonster vocabulary file.');
-    }
+    // Read capcode
+    this.capcode = dataView.getUint8(0);
 
-    // Read useUnk
-    this.useUnk = (dataView.getUint8(1) === 1) ? true : false;
-
-    // Read charset var
-    this.charset = dataView.getUint8(2);
+    // Read charset
+    this.charset = dataView.getUint8(1);
     if (this.charset > 2) {
       throw new Error('Invalid TokenMonster vocabulary file.');
     }
 
-    // Read customIDs var
-    switch (dataView.getUint8(5)) {
-      case 0:
-        this.customIDs = false;
-        break;
-      case 1:
-        this.customIDs = true;
-        break;
-      default:
-        throw new Error('Invalid TokenMonster vocabulary file.');
+    // Read normalization
+    this.normalization = dataView.getUint8(2);
+    if (this.normalization > 2) {
+      throw new Error('Invalid TokenMonster vocabulary file.');
     }
 
-    // Read 24-bit unsigned integer, this is the number of tokens in the vocabulary
-    const n = dataView.getUint8(6) | (dataView.getUint8(7) << 8) | (dataView.getUint8(8) << 16);
-    this.deleteToken = dataView.getUint8(9) | (dataView.getUint8(10) << 8) | (dataView.getUint8(11) << 16);
+    let offset = 8
+    
+    // Read the UNK token
+    this.unk = dataView.getUint8(offset) | (dataView.getUint8(offset+1) << 8) | (dataView.getUint8(offset+2) << 16);
+    if (this.unk != 16777215) {
+      this.useUnk = true;
+    }
+    offset += 3;
+
+    // Read vocabsize
+    this.vocab_size = dataView.getUint8(offset) | (dataView.getUint8(offset+1) << 8) | (dataView.getUint8(offset+2) << 16);
+    offset += 3;
+    offset += 3;
+
+    // Read nInfo
+    const n = dataView.getUint8(offset) | (dataView.getUint8(offset+1) << 8) | (dataView.getUint8(offset+2) << 16);
+    offset += 3;
+
+    this.deleteToken = dataView.getUint8(offset) | (dataView.getUint8(offset+1) << 8) | (dataView.getUint8(offset+2) << 16);
+    offset += 3;
     if (this.deleteToken != 16777215) {
       this.hasDeleteToken = true;
     }
 
-    // Iterate n times
-    let offset = 12;
-    let max_token_len = 0;
+    this.max_token_len = dataView.getUint8(offset);
+    offset++;
 
-    this.word2id = new Uint8ArrayHashMap(n);
-
+    let lengths = []
     for (let i = 0; i < n; i++) {
-      // Read 1 byte and convert it to an integer
+      // Read the token info
       const len = dataView.getUint8(offset++);
-
-      // Read len bytes as a string
       const key = new Uint8Array(dataView.buffer, dataView.byteOffset + offset, len);
       offset += len;
-      max_token_len = Math.max(max_token_len, len);
-
-      // Set the key in the map to the corresponding index
-      this.word2id.set(key, i);
-      this.id2word[i] = key;
-      this.id2string[i] = displayString1(key, this.capcode);
-      this.id2display[i] = displayString2(key, this.capcode);
-
-      this.id2flag[i] = dataView.getUint8(offset++);
-      this.id2nWords[i] = dataView.getUint8(offset++);
-
-      const alternative_index = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16);
-      this.id2alternative[i] = alternative_index;
-      if (alternative_index == 16777215) { // index 16777215 means no alternative
-        this.id2alternative_length[i] = 0;
-      } else {
-        const sac = this.id2word[alternative_index];
-        this.id2alternative_length[i] = sac.length; // save javascript length, not byte length
-      }
+      const flag = dataView.getUint8(offset++);
+      const nWords = dataView.getUint8(offset++);
+      const index1 = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16);
       offset += 3;
-
-      const alternative_index2 = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16)
-      this.id2alternative2[i] = alternative_index2;
-      if (alternative_index2 == 16777215) { // index 16777215 means no alternative
-        this.id2alternative2_length[i] = 0;
-      } else {
-        const sac = this.id2word[alternative_index2];
-        this.id2alternative2_length[i] = sac.length; // save javascript length, not byte length
+      const index2 = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16);
+      offset += 3;
+      const id = dataView.getUint8(offset) | (dataView.getUint8(offset + 1) << 8) | (dataView.getUint8(offset + 2) << 16);
+      offset += 7;
+      // Parse it
+      this.index2id[i] = id;
+      this.word2index.set(key, i);
+      lengths[i] = key.length;
+      if (this.id2word[id] === undefined) {
+        this.id2word[id] = key;
+        this.id2string[id] = displayString1(key, this.capcode);
+        this.id2display[id] = displayString2(key, this.capcode);
       }
-      offset += 7; // skip 4 bytes score
+      this.index2flag[i] = flag;
+      this.index2nWords[i] = nWords;
+      if (index1 == 16777215) {
+        this.index2alternative_length[i] = 0;
+      } else {
+        const sac = this.id2word[this.index2id[index1]];
+        this.index2alternative_length[i] = lengths[index1];
+      }
+      this.index2alternative[i] = index1;
+      if (index2 == 16777215) {
+        this.index2alternative2_length[i] = 0;
+      } else {
+        this.index2alternative2_length[i] = lengths[index2];
+      }
+      this.index2alternative2[i] = index2;
     }
 
     // set the UNK token
     if (this.useUnk) {
-      this.id2alternative[n] = 16777215;
-      this.id2alternative_length[n] = 0;
-      this.id2alternative2[n] = 16777215;
-      this.id2alternative2_length[n] = 0;
-      this.id2begin[n] = 0;
-      this.id2end[n] = 0;
-      this.id2word[n] = new Uint8Array([]);
-      this.id2string[i] = "<UNK>";
-      this.id2display[i] = "<UNK>";
-      this.unk = n;
+      this.id2word[this.unk] = new Uint8Array([]);
+      this.id2string[this.unk] = "<UNK>";
+      this.id2display[this.unk] = "<UNK>";
     }
 
     // Setup beginByte
@@ -416,37 +445,20 @@ class TokenMonster {
     for (var i = 0; i < 256; i++) {
       this.beginByte[i] = dataView.getUint8(offset++);
     }
-    // set max_token_len
-    this.max_token_len = max_token_len;
   }
 
   tokenize(text) {
-    let encoder = new TextEncoder();
-    switch (this.charset) {
-      case 1: // UTF-8
-        if (text instanceof Uint8Array) {
-          const decoder = new TextDecoder('utf-8');
-          text = decoder.decode(text);
-        }
-        if (this.capcode) {
-          text = capcode_encode(text);
-        }
-        text = text.normalize("NFD");
-        text = encoder.encode(text);
-        break;
-      case 2: // UTF-16
-        if (text instanceof Uint8Array) {
-          const decoder = new TextDecoder('utf-16');
-          text = decoder.decode(text);
-        }
-        if (this.capcode) {
-          text = capcode_encode(text);
-        }
-        text = text.normalize("NFD");
-        encoder = new TextEncoder('utf-16le');
-        text = encoder.encode(text);
-        break;
+    if (text instanceof Uint8Array) {
+      const decoder = new TextDecoder('utf-8');
+      text = decoder.decode(text);
     }
+    text = this.normalize(text);
+    if (this.capcode == 2) {
+      text = capcode_encode(text);
+    } else if (this.capcode == 1) {
+      // apply deleteToken only
+    }
+    text = new TextEncoder().encode(text);
     if (!(text instanceof Uint8Array)) {
       text = Uint8Array.from(text);
     }
@@ -509,7 +521,8 @@ class TokenMonster {
 
     outerLoop:
     while (i < textLen) {
-      [id, len, found] = this.word2id.findLargestSubarray(text.subarray(i, i + Math.min(textLen - i, this.max_token_len)));
+
+      [id, len, found] = this.word2index.findLargestSubarray(text.subarray(i, i + Math.min(textLen - i, this.max_token_len)));
 
           if (found) {
             while (i < textLen) {
@@ -523,19 +536,20 @@ class TokenMonster {
               score3b = -1000000;
               
               i2 = i + len;
-              const temp1 = this.id2flag[id] & 32;
+              const temp1 = this.index2flag[id] & 32;
               const temp2 = this.beginByte[text[i2]];
               if (i2 < textLen && (temp1 == 0 || temp2 != 12)) {
                 // Look ahead from first option
-                [id2, len2, found2] = this.word2id.findLargestSubarray(text.subarray(i2, i2 + Math.min(textLen - i2, this.max_token_len)));
-                console.log("[1] " + this.debug(id) + " + " + this.debug(id2) + " (" + (len + len2) + ")");
+                [id2, len2, found2] = this.word2index.findLargestSubarray(text.subarray(i2, i2 + Math.min(textLen - i2, this.max_token_len)));
+                console.log(id2, found2);
+                //console.log("[1] '" + this.debug(id) + "' + '" + this.debug(id2) + "' (" + (len + len2) + ")");
 
                 if (found2) {
                   // Score first option
-                  nWords = this.id2nWords[id] - forwardDelete;
-                  nWords2 = this.id2nWords[id2];
-                  flag = this.id2flag[id];
-                  flag2 = this.id2flag[id2];
+                  nWords = this.index2nWords[id] - forwardDelete;
+                  nWords2 = this.index2nWords[id2];
+                  flag = this.index2flag[id];
+                  flag2 = this.index2flag[id2];
                   beginByte = this.beginByte[text[i2 + len2]];
                   score1 = (
                             len + len2 + (flag >> 7) + (flag2 >> 7)
@@ -553,14 +567,12 @@ class TokenMonster {
                   if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
                     testlen = Math.min(textLen - i2, this.max_token_len - this.charset);
                     lilbuf.set(text.subarray(i2, i2 + testlen), this.charset);
-                    //console.log("TEST1", new TextDecoder('utf-8').decode(lilbuf.subarray(0, testlen + this.charset)));
-                    [id2b, len2b, found2b] = this.word2id.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
+                    [id2b, len2b, found2b] = this.word2index.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
                     if (found2b && len2b > len2 + 1) {
-                      //console.log("REPLACED1", this.debug(id2), "->", this.debug(id2b));
                       len2b -= this.charset;
                       branch1b = len + len2b;
-                      nWords2 = this.id2nWords[id2b] - 1;
-                      flag2 = this.id2flag[id2b];
+                      nWords2 = this.index2nWords[id2b] - 1;
+                      flag2 = this.index2flag[id2b];
                       beginByte = this.beginByte[text[i2 + len2b]];
                       score1b = (
                                 branch1b + (flag >> 7) + (flag2 >> 7)
@@ -578,21 +590,21 @@ class TokenMonster {
                   }
                 }
 
-                alternativeid = this.id2alternative[id];
+                alternativeid = this.index2alternative[id];
                 if (alternativeid != 16777215) {
                   // Get alternative 1
-                  slen = this.id2alternative_length[id] - forwardDelete;
+                  slen = this.index2alternative_length[id] - forwardDelete;
                   i3 = i + slen;
-                  [id3, len3, found3] = this.word2id.findLargestSubarray(text.subarray(i3, i3 + Math.min(textLen - i3, this.max_token_len)));
-                  console.log("[2] " + this.debug(alternativeid) + " + " + this.debug(id3) + " (" + (slen + len3) + ")");
+                  [id3, len3, found3] = this.word2index.findLargestSubarray(text.subarray(i3, i3 + Math.min(textLen - i3, this.max_token_len)));
+                  //console.log("[2] " + this.debug(alternativeid) + " + " + this.debug(id3) + " (" + (slen + len3) + ")");
 
                   if (found3) {
                     // Score for alternative 1
                     branch2 = slen + len3;
-                    nWords = this.id2nWords[alternativeid] - forwardDelete;
-                    nWords2 = this.id2nWords[id3];
-                    flag = this.id2flag[alternativeid];
-                    flag2 = this.id2flag[id3];
+                    nWords = this.index2nWords[alternativeid] - forwardDelete;
+                    nWords2 = this.index2nWords[id3];
+                    flag = this.index2flag[alternativeid];
+                    flag2 = this.index2flag[id3];
                     beginByte = this.beginByte[text[i3 + len3]];
                     score2 = (
                                branch2 + (flag >> 7) + (flag2 >> 7)
@@ -611,14 +623,12 @@ class TokenMonster {
                    if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
                       testlen = Math.min(textLen - i3, this.max_token_len - this.charset);
                       lilbuf.set(text.subarray(i3, i3 + testlen), this.charset);
-                      //console.log("TEST2", new TextDecoder('utf-8').decode(lilbuf.subarray(0, testlen + this.charset)));
-                      [id3b, len3b, found3b] = this.word2id.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
+                      [id3b, len3b, found3b] = this.word2index.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
                       if (found3b && len3b > len3 + 1) {
-                        //console.log("REPLACED2", this.debug(id3), "->", this.debug(id3b));
                         len3b -= this.charset;
                         branch2b = slen + len3b;
-                        nWords2 = this.id2nWords[id3b] - 1;
-                        flag2 = this.id2flag[id3b];
+                        nWords2 = this.index2nWords[id3b] - 1;
+                        flag2 = this.index2flag[id3b];
                         beginByte = this.beginByte[text[i3 + len3b]];
                         score2b = (
                                   branch2b + (flag >> 7) + (flag2 >> 7)
@@ -638,20 +648,20 @@ class TokenMonster {
                   }
                   
                   // Look for alternative 2
-                  alternative2id = this.id2alternative2[id];
+                  alternative2id = this.index2alternative2[id];
                   if (alternative2id != 16777215) {
 
-                      slen2 = this.id2alternative2_length[id] - forwardDelete;
+                      slen2 = this.index2alternative2_length[id] - forwardDelete;
                       i4 = i + slen2;
-                      [id4, len4, found4] = this.word2id.findLargestSubarray(text.subarray(i4, i4 + Math.min(textLen - i4, this.max_token_len)));
-                      console.log("[3] " + this.debug(alternative2id) + " + " + this.debug(id4) + " (" + (slen2 + len4) + ")");
+                      [id4, len4, found4] = this.word2index.findLargestSubarray(text.subarray(i4, i4 + Math.min(textLen - i4, this.max_token_len)));
+                      //console.log("[3] " + this.debug(alternative2id) + " + " + this.debug(id4) + " (" + (slen2 + len4) + ")");
 
                       if (found4) {
                         branch3 = slen2 + len4;
-                        nWords = this.id2nWords[alternative2id] - forwardDelete;
-                        nWords2 = this.id2nWords[id4];
-                        flag = this.id2flag[alternative2id];
-                        flag2 = this.id2flag[id4];
+                        nWords = this.index2nWords[alternative2id] - forwardDelete;
+                        nWords2 = this.index2nWords[id4];
+                        flag = this.index2flag[alternative2id];
+                        flag2 = this.index2flag[id4];
                         beginByte = this.beginByte[text[i4 + len4]];
                         score3 = (
                                   branch3 + (flag >> 7) + (flag2 >> 7)
@@ -669,14 +679,12 @@ class TokenMonster {
                         if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
                           testlen = Math.min(textLen - i4, this.max_token_len - this.charset);
                           lilbuf.set(text.subarray(i4, i4 + testlen), this.charset);
-                          //console.log("TEST3", new TextDecoder('utf-8').decode(lilbuf.subarray(0, testlen + this.charset)));
-                          [id4b, len4b, found4b] = this.word2id.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
+                          [id4b, len4b, found4b] = this.word2index.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
                           if (found4b && len4b > len4 + 1) {
-                            //console.log("REPLACED3", this.debug(id4), "->", this.debug(id4b));
                             len4b -= this.charset;
                             branch3b = slen2 + len4b;
-                            nWords2 = this.id2nWords[id4b] - 1;
-                            flag2 = this.id2flag[id4b];
+                            nWords2 = this.index2nWords[id4b] - 1;
+                            flag2 = this.index2flag[id4b];
                             beginByte = this.beginByte[text[i4 + len4b]];
                             score3b = (
                                       branch3b + (flag >> 7) + (flag2 >> 7)
@@ -701,13 +709,13 @@ class TokenMonster {
                 
                 switch (maxScore) {
                     case -1000000:
-                      tokens.push(id);
+                      tokens.push(this.index2id[id]);
                       i += len;
                       forwardDelete = 0;
                       console.log("branch 0");
                       continue outerLoop;
                     case score1:
-                      tokens.push(id);
+                      tokens.push(this.index2id[id]);
                       i += len;
                       id = id2;
                       len = len2;
@@ -715,7 +723,7 @@ class TokenMonster {
                       console.log("branch 1");
                       break;
                     case score2:
-                      tokens.push(alternativeid);
+                      tokens.push(this.index2id[alternativeid]);
                       i += slen;
                       id = id3;
                       len = len3;
@@ -724,7 +732,7 @@ class TokenMonster {
                       break;
                     case score3:
                       // Go with branch 3
-                      tokens.push(alternative2id);
+                      tokens.push(this.index2id[alternative2id]);
                       i += slen2;
                       id = id4;
                       len = len4;
@@ -732,7 +740,7 @@ class TokenMonster {
                       console.log("branch 3");
                       break;
                     case score1b:
-                      tokens.push(id);
+                      tokens.push(this.index2id[id]);
                       tokens.push(this.deleteToken);
                       i += len;
                       id = id2b;
@@ -741,7 +749,7 @@ class TokenMonster {
                       console.log("branch 1b");
                       break;
                     case score2b:
-                      tokens.push(alternativeid);
+                      tokens.push(this.index2id[alternativeid]);
                       tokens.push(this.deleteToken);
                       i += slen;
                       id = id3b;
@@ -750,7 +758,7 @@ class TokenMonster {
                       console.log("branch 2b");
                       break;
                     case score3b:
-                      tokens.push(alternative2id);
+                      tokens.push(this.index2id[alternative2id]);
                       tokens.push(this.deleteToken);
                       i += slen2;
                       id = id4b;
@@ -759,11 +767,11 @@ class TokenMonster {
                       console.log("branch 3b");
                       break;
                     default:
-                      //console.log("BRANCH ERROR!")
-                      break;
+                      console.log("BRANCH ERROR!");
+                      return tokens;
                 }
               } else {
-                tokens.push(id);
+                tokens.push(this.index2id[id]);
                 i += len;
                 forwardDelete = 0;
                 console.log("branch 1 of 1");
@@ -777,6 +785,7 @@ class TokenMonster {
             if (this.useUnk) {
               tokens.push(this.unk);
             }
+            console.log("branch N/A");
           }
     }
     return tokens;

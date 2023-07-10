@@ -11,10 +11,10 @@ pip install tokenmonster
 import tokenmonster
 
 # Optionally set the tokenmonster directory, otherwise it will use ~/_tokenmonster
-TokenMonster.set_local_directory("/path/to/preferred")
+tokenmonster.set_local_directory("/path/to/preferred")
 
 # Load a vocabulary by name, filepath or URL
-vocab = TokenMonster("english-24000-consistent-v1")
+vocab = tokenmonster.load("english-24000-consistent-v1")
 
 # Tokenize some text
 text = "Some text to turn into token IDs."
@@ -42,79 +42,93 @@ It's my intention for this library to integrate directly into Hugging Face Trans
 .
 ## Full Documentation
 1. [Usage](#usage)
-2. TokenMonster Methods
-    - [TokenMonster.\_\_init\_\_(path)](#tokenmonster__init__path)
-    - [TokenMonster.\_\_len\_\_()](#tokenmonster__len__)
-	- [vocab.save(fname)](#vocabsavefname)
+2. Loading & Exporting
+    - [tokenmonster.load(path)](#tokenmonsterloadpath)
+    - [tokenmonster.new(yaml)](#tokenmonsternewyaml)
+    - [vocab.save(fname)](#vocabsavefname)
+    - [vocab.export_yaml(order_by_score=False)](#vocabexport_yamlorder_by_scorefalse)
 3. Tokenization & Detokenization
-	- [vocab.tokenize(text)](#vocabtokenizetext)
-	- [vocab.decode(tokens)](#vocabdecodetokens)
+    - [vocab.tokenize(text)](#vocabtokenizetext)
+    - [vocab.decode(tokens)](#vocabdecodetokens)
     - [vocab.decoder()](#vocabdecoder)
     - [decoder.decode(tokens)](#decoderdecodetokens)
 4. Vocabulary Information
+    - [len(vocab)](#lenvocab)
     - [vocab.get_dictionary()](#vocabget_dictionary)
-    - [vocab.capcode()](#vocabcapcode)
     - [vocab.charset()](#vocabcharset)
+    - [vocab.normalization()](#vocabnormalization)
+    - [vocab.capcode()](#vocabcapcode)
+    - [vocab.mode()](#vocabmode)
     - [vocab.unk_token_id()](#vocabunk_token_id)
     - [vocab.convert_ids_to_tokens(ids)](#vocabconvert_ids_to_tokensids)
     - [vocab.convert_ids_to_tokens_decoded(ids)](#vocabconvert_ids_to_tokens_decodedids)
     - [vocab.id_to_token(id)](#vocabid_to_tokenid)
     - [vocab.id_to_token_decoded(id)](#vocabid_to_token_decodedid)
-	- [vocab.token_to_id(token)](#vocabtoken_to_idtoken)
+    - [vocab.token_to_id(token)](#vocabtoken_to_idtoken)
     - [vocab.convert_tokens_to_ids(tokens)](#vocabconvert_tokens_to_idstokens)
 5. Vocabulary Modification
-    - [vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)](#vocabmodifyadd_special_tokens-add_regular_tokensnone-delete_tokensnone-resizenone-change_unknone)
+    - [vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)](#vocabmodifyadd_special_tokens-add_regular_tokensnone-delete_tokensnone-resizenone-change_unknone-reset_token_idsfalse)
     - [vocab.add_token(token)](#vocabadd_tokentoken)
     - [vocab.delete_token(token)](#vocabdelete_tokentoken)
+    - [vocab.delete_token_by_id(id)](#vocabdelete_token_by_idid)
     - [vocab.add_special_token(token)](#vocabadd_special_tokentoken)
-    - [vocab.resize(size)](#vocabresizesize)
+    - [vocab.resize(size)](#vocabresizesize-reset_token_idsfalse)
+    - [vocab.reset_token_ids()](#vocabreset_token_ids)
     - [vocab.enable_unk_token()](#vocabenable_unk_token)
     - [vocab.disable_unk_token()](#vocabdisable_unk_token)
-6. TokenMonster Class Methods
-    - [TokenMonster.set_local_directory(dir=None)](#tokenmonsterset_local_directorydirnone)
-    - [TokenMonster.deserialize_tokens(binary_string)](#tokenmonsterdeserialize_tokensbinary_string)
-    - [TokenMonster.serialize_tokens(integer_list)](#tokenmonsterserialize_tokensinteger_list)
-    - [TokenMonster.disconnect()](#tokenmonsterdisconnect)
+6. Other
+    - [tokenmonster.set_local_directory(dir=None)](#tokenmonsterset_local_directorydirnone)
+    - [tokenmonster.disconnect()](#tokenmonsterdisconnect)
+    - [vocab.serialize_tokens(integer_list)](#vocabserialize_tokensinteger_list)
+    - [vocab.deserialize_tokens(binary_string)](#vocabdeserialize_tokensbinary_string)
 
 ## Usage
 
-The main class is `TokenMonster`, which is initialized with a vocabulary from a file, URL or prebuilt vocabulary name.
-
 ```python
-vocab = TokenMonster("english-32000-balanced-v1")
+vocab = tokenmonster.load("english-32000-balanced-v1")
 tokens = vocab.tokenize(str)
 decoded_string = vocab.decode(tokens)
 ```
 
 ## TokenMonster Methods
 
-### TokenMonster.\_\_init\_\_(path)
+### tokenmonster.load(path)
 
-Initialize the TokenMonster object with a vocabulary file or URL.
+Loads a TokenMonster vocabulary from file, URL or by name.
 
 #### Parameters
 
-- `path` (string): The path to the vocabulary file or URL.
-
-#### Usage
-
-```python
-vocab = TokenMonster("filename")
-```
-
-### TokenMonster.\_\_len\_\_()
-
-Get the size of the vocabulary.
+- `path` (string): A filepath, URL or pre-built vocabulary name.
 
 #### Returns
 
-- `int`: The size of the vocabulary.
+- `Vocab`: An instance of tokenmonster.Vocab.
 
 #### Usage
 
 ```python
-vocab = TokenMonster("filename")
-number_of_tokens = len(vocab)
+vocab = tokenmonster.load("english-32000-balanced-v1")
+```
+
+### tokenmonster.new(yaml)
+
+Creates a new vocabulary from a YAML string.
+A sample YAML file can be found here: https://github.com/alasdairforsythe/tokenmonster/yaml_guide
+You should save it in the vocab format with `vocab.save()` for future use.
+
+#### Parameters
+
+- `yaml` (string or bytes string): The YAML file.
+
+#### Returns
+
+- `Vocab`: An instance of tokenmonster.Vocab class.
+
+#### Usage
+
+```python
+vocab = tokenmonster.new(yaml_string)
+vocab.save(filename)
 ```
 
 ### vocab.save(fname)
@@ -136,6 +150,26 @@ Specify full filepath if you intend to save elsewhere.
 
 ```python
 vocab.save("test.vocab")
+```
+
+### vocab.export_yaml(order_by_score=False)
+
+Exports the vocabulary as a YAML file, which is returned as a bytes string.
+
+#### Parameters
+
+- `order_by_score` (boolean): If true the tokens are order by score instead of alphabetically.
+
+#### Returns
+
+- `YAML` (bytes string): The vocabulary in YAML format.
+
+#### Usage
+
+```python
+yaml = vocab.export_yaml()
+with open(file_path, 'wb') as file:
+  file.write(yaml)
 ```
 
 ## Tokenization & Detokenization
@@ -191,7 +225,7 @@ Returns a new decoder instance used for decoding tokens into text.
 
 #### Returns
 
-- `TokenMonster.DecoderInstance`: A new decoder instance.
+- `tokenmonster.DecoderInstance`: A new decoder instance.
 
 #### Usage
 
@@ -201,18 +235,34 @@ decoder = vocab.decoder()
 
 ## Vocabulary Information
 
+### len(vocab)
+
+Get the size of the vocabulary.
+
+#### Returns
+
+- `int`: The size of the vocabulary.
+
+#### Usage
+
+```python
+vocab = tokenmonster.load("filename")
+number_of_tokens = len(vocab)
+```
+
 ### vocab.get_dictionary()
 
 Returns a dictionary of all tokens in the vocabulary.
 
-This returns a list where the index of the list is the token ID and the content of each is
-"token", "token_decoded", "type" and "score". Note that you should not attempt to use this to
-interpret tokenized sequences because the capcode encoded tokens can change the way the next
-tokens are decoded. Therefore you should always use one of the two "decode" methods.
+This returns a list of dictionaries with keys "id", "token", "token_decoded", "type" and "score".
+Note that you should not attempt to use this to interpret tokenized sequences because the capcode
+encoded tokens can change the way the next tokens are decoded. Therefore you should always use
+one of the two "decode" methods.
 
 #### Returns
 
 - `list`: A list of dictionaries where the index is the token ID and each is a dictionary with the following keys:
+  - `id` (int): The ID of the token.
   - `token` (string): The token including capcode encoding.
   - `token_decoded` (string): The same token decoded from its capcode form.
   - `type` (int): The type of token (0 = regular, 1 = byte, 2 = special, 3 = UNK).
@@ -224,21 +274,46 @@ tokens are decoded. Therefore you should always use one of the two "decode" meth
 tokens = vocab.get_dictionary()
 ```
 
-### vocab.capcode()
-
-Returns true if the vocabulary has capcode enabled.
-
-#### Returns
-
-- `bool`: True if capcode is enabled, False otherwise.
-
 ### vocab.charset()
 
 Returns the character set used by the vocabulary.
 
 #### Returns
 
-- `string`: The character set used by the vocabulary. Possible values are "UTF-8", "UTF-16", or "None".
+- `string`: The character set used by the vocabulary. Possible values are "UTF-8", "UTF-16", "None".
+
+### vocab.normalization()
+
+Returns the normalization of the vocabulary.
+
+#### Returns
+
+- `string`: The normalization of the vocabulary. Possible values are "NFD", "None".
+
+### vocab.capcode()
+
+Returns the capcode level of the vocabulary.
+- 0 = disabled
+- 1 = only deleteToken
+- 2 = enabled
+
+#### Returns
+
+- `int`: The capcode level (0-2).
+
+### vocab.mode()
+
+Returns the optimization mode of the vocabulary.
+- 0 = unfiltered
+- 1 = clean
+- 2 = balanced
+- 3 = consistent
+- 4 = strict
+- 5 = (vocabulary was not trained with TokenMonster)
+
+#### Returns
+
+- `int`: The optimization mode (0-5).
 
 ### vocab.unk_token_id()
 
@@ -326,17 +401,17 @@ This works for both capcode-encoded "raw" tokens and their decoded form.
 
 ## Vocabulary Modification
 
-### vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)
+### vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None, reset_token_ids=False)
 
-Modifies the vocabulary. Doing so produces a new vocabulary with entirely different
-ID for each token, including special tokens. It therefore invalidates all decoder
-objects associated with the model before modification.
+Modifies the vocabulary. Doing so invalidates all decoder objects associated with the
+model before modification.
 
 Notes:
 - Special tokens are special in that they cannot be skipped. All regular tokens
   that contain specials tokens within them are deleted.
 - When resizing the vocabulary down, the worst performing tokens are deleted
-  ensuring the vocabulary remains efficient.
+  ensuring the vocabulary remains efficient. However, only regular tokens
+  with a score > 0 are can be removed by resizing.
 - A vocabulary can also be resized up. If any tokens have been removed by deleting
   or resizing, they can be restored by resizing the vocabulary to be larger.
 - After modifying you will need to "save" the vocabulary to a file or it'll be
@@ -349,7 +424,8 @@ Notes:
 - `add_regular_tokens` (string or list of strings): Regular tokens to add to the vocabulary.
 - `delete_tokens` (string or list of strings): Regular or Special tokens to delete.
 - `resize` (int): Resizes the vocabulary to this size.
-- `change_unk` (Boolean): If set, it enables or disables the UNK token.
+- `change_unk` (boolean): If set, it enables or disables the UNK token.
+- `reset_token_ids` (boolean): If true the IDs are all reset starting from zero.
 
 #### Returns
 
@@ -366,7 +442,7 @@ vocab.modify("<eos>", None, None, len(vocab))
 
 ### vocab.add_token(token)
 
-Add one or more regular tokens. This also changes the token IDs. See "modify".
+Add one or more regular tokens.
 
 #### Parameters
 
@@ -378,7 +454,7 @@ Add one or more regular tokens. This also changes the token IDs. See "modify".
 
 ### vocab.delete_token(token)
 
-Delete one or more regular or special tokens. This also changes the token IDs. See "modify".
+Delete one or more regular or special tokens.
 You can give the token in either its encoded or decoded form.
 
 #### Parameters
@@ -389,9 +465,21 @@ You can give the token in either its encoded or decoded form.
 
 - `int`: The new size of the vocabulary.
 
+### vocab.delete_token_by_id(id)
+
+Delete one or more regular or special token by specifying the token ID.
+
+#### Parameters
+
+- `id` (int or list of ints): The IDs of the tokens to delete.
+
+#### Returns
+
+- `int`: The new size of the vocabulary.
+
 ### vocab.add_special_token(token)
 
-Add one or more special tokens. This also changes the token IDs. See "modify".
+Add one or more special tokens.
 
 #### Parameters
 
@@ -401,28 +489,39 @@ Add one or more special tokens. This also changes the token IDs. See "modify".
 
 - `int`: The new size of the vocabulary.
 
-### vocab.resize(size)
+### vocab.resize(size, reset_token_ids=False)
 
-Changes the size of the vocabulary. This also changes the token IDs. See "modify".
+Changes the size of the vocabulary and optionally resets the token IDs.
 
 A vocabulary can be enlarged as well reduced in size. Only the worst performing
 tokens are removed when reducing.
 
+Resizing only removes regular tokens that are not single byte token and have
+score > 0. If there are not enough of these, the new size may not match
+the target size.
+
 #### Parameters
 
 - `size` (int): The new size of the vocabulary.
+- `reset_token_ids` (boolean): If true, the IDs of all tokens are reset from zero.
 
 #### Returns
 
 - `int`: The new size of the vocabulary.
 
+### vocab.reset_token_ids()
+
+Resets the token IDs to be sequential beginning from zero.
+
+If tokens have been deleted from the vocabulary there will be gaps in the token IDs.
+Resetting the token IDs removes these gaps but all tokens will have new IDs.
+
 ### vocab.enable_unk_token()
 
 Enables the UNK token.
 
-The UNK token can be added or removed without affecting the rest of the vocabulary.
 If enabled, the UNK token appears whenever there is a character that is not in the vocabulary.
-Notethat the UNK token will not be enabled if all possible characters have tokens.
+Note that the UNK token will not be enabled if all possible characters have tokens.
 Use `vocab.unk_token_id()` to retrieve the ID for the UNK token.
 
 #### Returns
@@ -433,7 +532,6 @@ Use `vocab.unk_token_id()` to retrieve the ID for the UNK token.
 
 Disables the UNK token.
 
-The UNK token can be added or removed without affecting the rest of the vocabulary.
 Without an UNK token, any character for which there is no token is ignored during tokenization.
 
 #### Returns
@@ -449,7 +547,7 @@ This class takes tokens and decodes them to generate human-readable strings.
 ## Usage
 
 ```python
-vocab = TokenMonster("english-32000-balanced-v1")
+vocab = tokenmonster.load("english-32000-balanced-v1")
 decoder = vocab.decoder()
 decoded_string = decoder.decode(tokens)
 decoded_string += decoder.decode(more_tokens)
@@ -476,15 +574,15 @@ in multiple calls, then you can use the vocabulary decode method directly.
 #### Usage
 
 ```python
-vocab = TokenMonster("english-32000-balanced-v1")
+vocab = tokenmonster.load("english-32000-balanced-v1")
 decoder = vocab.Decoder()
 decoded_string = decoder.decode(tokens)
 decoded_string += decoder.decode(more_tokens)
 ```
 
-## TokenMonster Class Methods
+## Other
 
-### TokenMonster.set_local_directory(dir=None)
+### tokenmonster.set_local_directory(dir=None)
 
 Sets the local directory for TokenMonster.
 
@@ -494,23 +592,24 @@ If no directory is specified, the default directory is ~/\_tokenmonster
 
 - `dir` (string): The local directory to use.
 
-### TokenMonster.deserialize_tokens(binary_string)
+#### Usage
 
-Deserializes a binary string back into a list of ints (tokens).
-The encoding_length needs to be recorded separately.
+```python
+tokenmonster.set_local_directory("/path/to/preferred")
+```
 
-#### Parameters
+### tokenmonster.disconnect()
 
-- `binary_string` (bytes): The binary string to deserialize.
+Disconnects and closes tokenmonsterserver.
 
 #### Returns
 
-- `list of ints`: The deserialized tokens.
+- `None`
 
-### TokenMonster.serialize_tokens(integer_list)
+### vocab.serialize_tokens(integer_list)
 
 Serializes tokens from a list of ints into a binary string.
-The encoding_length needs to be recorded separately.
+The `encoding_length` used is from vocab.encoding_length.
 
 #### Parameters
 
@@ -520,11 +619,16 @@ The encoding_length needs to be recorded separately.
 
 - `bytes`: The serialized binary string.
 
-### TokenMonster.disconnect()
+### vocab.deserialize_tokens(binary_string)
 
-Disconnects and closes tokenmonsterserver.
+Deserializes a binary string back into a list of ints (tokens).
+The `encoding_length` used is from vocab.encoding_length.
+
+#### Parameters
+
+- `binary_string` (bytes): The binary string to deserialize.
 
 #### Returns
 
-- `None`
+- `list of ints`: The deserialized tokens.
 .

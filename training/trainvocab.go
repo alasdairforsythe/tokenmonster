@@ -20,12 +20,10 @@ import (
 	"path/filepath"
 	"encoding/json"
 	"encoding/binary"
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
-	uni "golang.org/x/text/encoding/unicode"
 	"github.com/AlasdairF/Conv"
 	"github.com/AlasdairF/Custom"
 	"github.com/AlasdairF/Sort/Uint32Uint32"
+	"github.com/alasdairforsythe/norm"
 	"github.com/alasdairforsythe/branchless"
 	"github.com/alasdairforsythe/pansearch"
 	"github.com/alasdairforsythe/capcode/go"
@@ -39,7 +37,7 @@ const (
 	runeError = '\uFFFD'
 	apostrophe	   = '\''
 	apostrophe2    = '’'
-	noAlternative = 16777215
+	DOES_NOT_EXIST = 16777215
 	MAXINT = 9223372036854775807
 )
 
@@ -60,14 +58,15 @@ var (
 	includeExtendedbytes bool
 	excludeOtherBytes bool
 	reserve uint8
-	usingCapcode bool = false
-	charsetFlag uint8 = 0
-	level uint8 = 0
+	usingCapcode uint8
+	charsetFlag uint8
+	level uint8
 	fast bool
 	specialTokensFilename string
 	dictionary2 string
 	hasSpecial bool
 	includeMissingBytes bool
+	normalizer norm.Normalizer
 
 	ungreedySuffixes = []string{"'s", "’s"}
 	ungreedySuffixesB [][]byte
@@ -78,7 +77,7 @@ var (
 )
 
 type resultStruct struct {
-	testVocab *pansearch.Fast
+	testVocab *pansearch.Light
 	tokensInText int
 	tokensToRemove [][]byte
 	missing []byte
@@ -88,7 +87,7 @@ type resultStruct struct {
 }
 
 type workStruct struct {
-	testVocab *pansearch.Fast
+	testVocab *pansearch.Light
 	workType uint8
 	fast bool
 }
@@ -105,6 +104,9 @@ type tokenInfo struct {
 type tokenOuter struct {
 	index	uint32		// the index of the alternative token
 	index2  uint32		// the index of the 2nd alternative token
+	id		uint32		// my ID
+	id1		uint32		// alternative ID
+	id2		uint32		// alternative 2 ID
 	length	int			// that token is this many bytes long
 	length2 int
 	data	tokenInner
@@ -152,9 +154,6 @@ func formatInt(v int) string {
 }
 
 func hasSuffixPos(key []byte) int {
-	if charsetFlag == 0 {
-		return -1
-	}
 	for _, suffix := range ungreedySuffixesB {
 		if bytes.HasSuffix(key, suffix) {
 			if len(suffix) < len(key) {
@@ -182,24 +181,24 @@ func genUTF8bytes(list []bool) {
 
 func genASCIIbytes(list []bool) {
 	for i:=32; i<127; i++ {
-		if !usingCapcode || (!(i >= 'A' && i <= 'Z' && i != 'C' && i != 'W' && i != 'D')) {
+		if usingCapcode != 2 || (!(i >= 'A' && i <= 'Z' && i != 'C' && i != 'W' && i != 'D')) {
 			list[i] = true
 		}
 	}
 	list[9] = true
 	list[10] = true
 	list[13] = true
-	if charsetFlag == 1 && !usingCapcode {
+	if usingCapcode == 1 {
 		list[127] = true
 	}
 }
 
 func genExtendedbytes(list []bool) {
 	s := `£€©®™°%¢¥—–•‘’“”áéíóúýàèìòùâêîôûäëïöüñãõçåæœ`
-	if !usingCapcode {
+	if usingCapcode != 2 && !normalizer.SpecifiedLowercase() {
 		s += `ÁÉÍÓÚÝÀÈÌÒÙÂÊÎÔÛÄËÏÖÜÑÃÕÇÅÆŒ`
 	}
-	s2, _ := norm_UTF8_NFD([]byte(s))
+	s2, _ := normalizer.Normalize([]byte(s))
 	for _, b := range s2 {
 		list[b] = true
 	}
@@ -210,7 +209,7 @@ func gen128bytes(list []bool) {
 	var b byte
 	for i:=0; i<128; i++ {
 		b = byte(i)
-		if !usingCapcode || (!(b >= 'A' && b <= 'Z' && b != 'C' && b != 'W' && b != 'D')) {
+		if usingCapcode != 2 || (!(b >= 'A' && b <= 'Z' && b != 'C' && b != 'W' && b != 'D')) {
 			list[i] = true
 		}
 	}
@@ -220,7 +219,7 @@ func gen256bytes(list []bool) {
 	var b byte
 	for i:=0; i<256; i++ {
 		b = byte(i)
-		if !usingCapcode || (!(b >= 'A' && b <= 'Z' && b != 'C' && b != 'W' && b != 'D')) {
+		if usingCapcode != 2 || (!(b >= 'A' && b <= 'Z' && b != 'C' && b != 'W' && b != 'D')) {
 			list[i] = true
 		}
 	}
@@ -245,25 +244,20 @@ func mergeBytes(list [][]byte, new []byte) ([][]byte, int) {
 }
 
 func isLetter(r rune) bool {
-	return (unicode.IsLetter(r) && (!usingCapcode || (r != 'W' && r != 'C' && r != 'D'))) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
+	return (unicode.IsLetter(r) && (usingCapcode!=2 || (r != 'W' && r != 'C' && r != 'D'))) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
 }
 
 func isAlphaNum(r rune) bool {
-	return (unicode.IsLetter(r) && (!usingCapcode || (r != 'W' && r != 'C' && r != 'D'))) || unicode.IsNumber(r) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
+	return (unicode.IsLetter(r) && (usingCapcode!=2 || (r != 'W' && r != 'C' && r != 'D'))) || unicode.IsNumber(r) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
 }
 
 func isCapcode(r rune) bool {
-	if usingCapcode {
-		return r == 'W' || r == 'D' || r == 'C'
-	} else if charsetFlag == 1 {
-		return r == 127
-	}
-	return false
+	return (usingCapcode == 1 && r == '\x7F') || (usingCapcode==2 && (r == 'C' || r == 'W' || r == 'D'))
 }
 
 func decodeRune(b []byte) (rune, int) {
 	switch charsetFlag {
-		case 1: // UTF-8
+		case 0, 1: // UTF-8
 			return utf8.DecodeRune(b)
 		case 2: // UTF-16
 			if len(b) < 2 {
@@ -293,7 +287,7 @@ func decodeRune(b []byte) (rune, int) {
 
 func decodeLastRune(b []byte) rune {
 	switch charsetFlag {
-		case 1: // UTF-8
+		case 0, 1: // UTF-8
 			r, _ := utf8.DecodeLastRune(b)
 			return r
 		case 2: // UTF-16
@@ -322,27 +316,34 @@ func decodeLastRune(b []byte) rune {
 	}
 }
 
-func norm_UTF8_NFD(input []byte) (output []byte, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			// Convert panic into error
-			err = errors.New(`UTF-8 NFD normalization panicked`)
-		}
-	}()
-	normalized := bytes.NewBuffer(make([]byte, 0, len(input) + (len(input) / 3) + 4))
-	normalizer := norm.NFD.Writer(normalized)
-	_, err = normalizer.Write(input)
-	if err != nil {
-		return nil, err
+func applyCapcode(data []byte) []byte {
+	if usingCapcode == 2 {
+		return capcode.Encode(data)
+	} else if usingCapcode == 1 {
+		return capcode.NoCapcodeEncode(data)
 	}
-	err = normalizer.Close()
-	if err != nil {
-		return nil, err
-	}
-	output = normalized.Bytes()
-	return output, err
+	return data
 }
 
+func normalize(data []byte) []byte {
+	processed, err := normalizer.Normalize(data)
+	if err == nil {
+		return applyCapcode(processed)
+	} else { // if failed try it the other way around
+		if !normalizer.SpecifiedLowercase() {
+			processed = applyCapcode(data)
+			processed, err = normalizer.Normalize(processed)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			panic(err)
+		}
+	}
+	return processed
+}
+
+/*
 func norm_UTF16_NFD(input []byte) ([]byte, error) {
 	// Assume LittleEndian by default
 	endian := uni.LittleEndian
@@ -358,11 +359,11 @@ func norm_UTF16_NFD(input []byte) ([]byte, error) {
 	}
 	// Attempt to decode the input with decided endian
 	utf16Decoder := uni.UTF16(endian, bomPolicy)
-	// Create a transformer to decode to UTF-8 and normalize the text to NFD
+	// Create a transformer to decode to UTF-16 and normalize the text to NFD
 	transformer := transform.Chain(utf16Decoder.NewDecoder(), norm.NFD)
 	// Create a reader with the transformer
 	reader := transform.NewReader(bytes.NewReader(input), transformer)
-	// Read normalized NFD UTF-8 bytes
+	// Read normalized NFD UTF-16 bytes
 	nfdBytes, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("Error normalizing content: %w", err)
@@ -387,8 +388,21 @@ func convertStringToUTF16WithNFDNormalization(s string) []byte {
 	w.Close()
 	return buf.Bytes()
 }
+*/
 
-func saveTokensToFile(filename string, data [][]byte, data2 [][]byte, data3 [][]byte, scores []uint32, datasize int) error {
+func convertStringToUTF16(s string) []byte {
+	return []byte(s)
+	/*
+	b := []byte(s)
+	buf := &bytes.Buffer{}
+	w := transform.NewWriter(buf, uni.UTF16(uni.LittleEndian, uni.IgnoreBOM).NewEncoder())
+	w.Write(b)
+	w.Close()
+	return buf.Bytes()
+	*/
+}
+
+func saveTokensToFile(filename string, data [][]byte, data2 [][]byte, data3 [][]byte, scores []uint32, datasize int, special [][]byte) error {
 	fi, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -396,11 +410,14 @@ func saveTokensToFile(filename string, data [][]byte, data2 [][]byte, data3 [][]
 	defer fi.Close()
 	w := custom.NewZlibWriter(fi)
 	defer w.Close()
-	w.WriteBool(usingCapcode)
+	w.WriteByte(usingCapcode)
 	w.WriteByte(charsetFlag)
+	w.WriteByte(normalizer.Flag)
 	w.WriteByte(level)
 	w.WriteByte(reserve)
-	w.WriteByte(0)
+	w.WriteByte(0) // reserved
+	w.WriteByte(0) // reserved
+	w.WriteByte(0) // reserved
 	w.WriteUint64(uint64(len(data) + len(data2) + len(data3)))
 	for _, b := range data {
 		w.WriteBytes8(b)
@@ -416,22 +433,31 @@ func saveTokensToFile(filename string, data [][]byte, data2 [][]byte, data3 [][]
 		for _, v := range scores {
 			w.WriteFloat32(float32(float64(v) / divider))
 		}
+		if len(special) > 0 {
+			w.WriteUint32(uint32(len(special)))
+			for _, b := range special {
+				w.WriteBytes8(b)
+			}
+		}
 	}
 	return nil
 }
 
-func loadTokensFromFile(filename string) (bool, uint8, uint8, uint8, uint8, [][]byte, error) {
+func loadTokensFromFile(filename string) (uint8, uint8, uint8, uint8, uint8, [][]byte, error) {
 	fi, err := os.Open(filename)
 	if err != nil {
-		return false, 0, 0, 0, 0, nil, err
+		return 0, 0, 0, 0, 0, nil, err
 	}
 	defer fi.Close()
 	r := custom.NewZlibReader(fi)
-	_usingCapcode := r.ReadBool()
+	_usingCapcode := r.ReadByte()
 	_charsetFlag := r.ReadByte()
+	_norm := r.ReadByte()
 	_level := r.ReadByte()
 	_reserve := r.ReadByte()
-	_custom := r.ReadByte()
+	r.ReadByte()
+	r.ReadByte()
+	r.ReadByte()
 	l := int(r.ReadUint64())
 	data := make([][]byte, l)
 	for i:=0; i<l; i++ {
@@ -440,13 +466,11 @@ func loadTokensFromFile(filename string) (bool, uint8, uint8, uint8, uint8, [][]
 	// Make sure we're at the end
 	if r.EOF() != nil { // it can be longer if it includes scores, so just do a quick sanity check
 		if _charsetFlag > 2 || _level > 5 || len(data[0]) > 40 || len(data[1]) > 40 || len(data[len(data)-1]) > 40 {
-			return false, 0, 0, 0, 0, nil, errors.New(filename + ` not valid.`)
+			return 0, 0, 0, 0, 0, nil, errors.New(filename + ` not valid.`)
 		}
 	}
-	return _usingCapcode, _charsetFlag, _level, _reserve, _custom, data, nil
+	return _usingCapcode, _charsetFlag, _norm, _level, _reserve, data, nil
 }
-
-
 
 /*
 
@@ -502,8 +526,6 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 			firstRun = false
 		}
 
-		testVocab := asset.testVocab
-
 		// Reset vars this round's total and scores
 		tokensInText = 0
 		missingList := []byte{}
@@ -511,32 +533,70 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 			scores[i] = sortUint32Uint32.KeyVal{uint32(i), 0}
 		} 
 
+		// Sanity check, this should never happen
+		if asset.testVocab.Len() != vocabSize {
+			panic(errors.New(`testVocab contains ` + conv.String(asset.testVocab.Len()) + ` not the target ` + conv.String(vocabSize)))
+		}
+
+		// We can add extra tokens beginning "D " for any token beginning with a letter or number
+		// Let's first assigned ID numbers
+		index = 0
+		idsmap := make(map[string]uint32)
+		var testVocab pansearch.Fast
+		if asset.testVocab.Reset() {
+			var token []byte
+			var r rune
+			var s string
+			add := string(capcode.DeleteToken) + " "
+			if usingCapcode == 1 {
+				add = string(capcode.NoCapcodeDeleteToken) + " "
+			}
+			for eof := false; !eof; {
+				token, eof = asset.testVocab.Next()
+				keys[index] = token
+				testVocab.Add(token)
+				s = string(token)
+				idsmap[s] = index
+				r, _ = decodeRune(token)
+				if usingCapcode != 0 && isAlphaNum(r) {
+					if hasSpecial {
+						if _, found = specialMap[s]; found {
+							specialMap[add + s] = true
+						}
+					}
+					s = add + s
+					if len(s) <= 40 {
+						testVocab.Add([]byte(s))
+						idsmap[s] = index
+					}
+				}
+				index++
+			}
+		}
+		testVocab.Build()
 		// Finish building the testVocab
 		maxlen = testVocab.LongestLength() // the longest token length in this testVocab
 		maxlenWithSpace = maxlen - lilbufOffset
 
-		// Sanity check, this should never happen
-		if testVocab.Len() != vocabSize {
-			panic(errors.New(`testVocab contains ` + conv.String(testVocab.Len()) + ` not the target ` + conv.String(vocabSize)))
-		}
-
 		// Loop through all tokens in the testVocab and try to find other tokens that have the same beginning, these are potential ungreedy alternatives
 		var charTable [256][4]uint32
-		vocabList := make([]tokenInfo, vocabSize)
+		vocabList := make([]tokenInfo, testVocab.Len())
 		if testVocab.Reset() {
 			var token, subword []byte
 			var on, hasSuffix, minAltSize int
 			var r, r2 rune
 			var n, n2 int
+			var s string
 			var priority1, priority2, nWords uint8
 			var onlyLetterSpace, onlyPunc, onlyNumberSpace bool
 			for eof := false; !eof; {
 				token, eof = testVocab.Next()
-				keys[on] = token
-				tokenData = tokenInfo{alt:tokenOuter{index:noAlternative, index2:noAlternative}}
+				s = string(token)
+				index = idsmap[s]
+				tokenData = tokenInfo{alt:tokenOuter{index:DOES_NOT_EXIST, index2:DOES_NOT_EXIST, id:index}}
 				// Check for special tokens
 				if hasSpecial {
-					if _, found = specialMap[string(token)]; found {
+					if _, found = specialMap[s]; found {
 						tokenData.alt.data.flag = 64
 						vocabList[on] = tokenData
 						on++
@@ -631,7 +691,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 
 				for length=len(token)-1; length>=minAltSize; length-- { // loop through all possible subwords that would also fit beneath this one
 					subword = token[:length] // the subword
-					if index, found = testVocab.Find(subword); found { // is this subword in the testVocab?
+					if index, found = testVocab.Find(subword); found { // is this subword in the testVocab? (and not the same ID)
 
 						// anything | space_letter or space_number
 						if length <= len(token) - 2 {
@@ -658,7 +718,8 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 
 						r = decodeLastRune(subword) // last char in subtoken
 						r2, _ = decodeRune(token[length:]) // the next char
-						if !usingCapcode {
+
+						if usingCapcode == 0 {
 							switch {
 							case (!isLetter(r) && r != '_') && (isLetter(r2) || r2 == '_'):
 								fallthrough
@@ -795,6 +856,14 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 					tokenData.alt.index, tokenData.alt.index2 = tokenData.alt.index2, tokenData.alt.index
 					tokenData.alt.length, tokenData.alt.length2 = tokenData.alt.length2, tokenData.alt.length
 				}
+
+				if tokenData.alt.length > 0 {
+					tokenData.alt.id1 = vocabList[tokenData.alt.index].alt.id
+					if tokenData.alt.length2 > 0 {
+						tokenData.alt.id2 = vocabList[tokenData.alt.index2].alt.id
+					}
+				}
+
 				vocabList[on] = tokenData
 				on++
 			}
@@ -814,17 +883,15 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 
 		// Find the deleteToken
 		hasDeleteToken = false
-		if charsetFlag == 1 {
-			if usingCapcode {
-				if index, found = testVocab.Find([]byte{capcode.DeleteToken}); found {
-					deleteToken = index
-					hasDeleteToken = true
-				}
-			} else {
-				if index, found = testVocab.Find([]byte{capcode.NoCapcodeDeleteToken}); found {
-					deleteToken = index
-					hasDeleteToken = true
-				}
+		if usingCapcode == 2 {
+			if index, found = testVocab.Find([]byte{capcode.DeleteToken}); found {
+				deleteToken = index
+				hasDeleteToken = true
+			}
+		} else if usingCapcode == 1 {
+			if index, found = testVocab.Find([]byte{capcode.NoCapcodeDeleteToken}); found {
+				deleteToken = index
+				hasDeleteToken = true
 			}
 		}
 		
@@ -890,7 +957,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									int((nextByte >> 2) & 1) +											// 1 if the next character after the 2nd token is a space
 									((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -			// 100x the number of whole words covered by this and next token
 									( (int(original.alt.data.flag & 1 & (second.flag >> 1)) * 103) + 	// Deduct 103 if the first and second token split a word
-									(int((original.alt.data.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Decuct 100 if it splits a capcode token
+									(int((original.alt.data.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Deduct 100 if it splits a capcode token
 									((int(second.flag & 1 & nextByte) * 3)) )) 							// Deduct 3 if the second token ends inside a word
 								maxScore = score1
 								
@@ -910,7 +977,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 											int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
 											((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
 											( (int(original.alt.data.flag & 1) * 103) + 				// Deduct 103 if the first and second token split a word
-											(int((original.alt.data.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Decuct 100 if it splits a capcode token
+											(int((original.alt.data.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Deduct 100 if it splits a capcode token
 											((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
 											1 )) 														// Deduct 1 for using an extra token
 										maxScore = branchless.Max(maxScore, score1b)
@@ -918,7 +985,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 								}
 							}
 
-							if original.alt.index != noAlternative {
+							if original.alt.index != DOES_NOT_EXIST {
 								i2 = i + original.alt.length - forwardDelete
 								index2, length2, found2 = testVocab.LongestSubstring(data[ i2 : i2 + branchless.Min(lenData - i2, maxlen) ])
 
@@ -937,7 +1004,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 										int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
 										((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
 										( (int(first.flag & 1 & (second.flag >> 1)) * 103) + 		// Deduct 103 if the first and second token split a word
-										(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) + // Decuct 100 if it splits a capcode token
+										(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) + 	// Deduct 100 if it splits a capcode token
 										((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
 										(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
 										(branchless.Equal(branchLength, length) * 10000) )) 		// Deduct 10,000 if the entire branch is the same size as the original first token
@@ -960,7 +1027,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 												int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
 												((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
 												( (int(first.flag & 1) * 103) + 							// Deduct 103 if the first and second token split a word
-												(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +
+												(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Deduct 100 if it splits a capcode token
 												((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
 												1 +															// Deduct 1 for using an extra token
 												(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
@@ -970,7 +1037,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									}
 								}
 
-								if original.alt.index2 != noAlternative {
+								if original.alt.index2 != DOES_NOT_EXIST {
 									i3 = i + original.alt.length2 - forwardDelete
 									index3, length3, found3 = testVocab.LongestSubstring(data[ i3 : i3 + branchless.Min(lenData - i3, maxlen) ])
 	
@@ -989,6 +1056,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 											int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
 											((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
 											( (int(first.flag & 1 & (second.flag >> 1)) * 103) + 		// Deduct 103 if the first and second token split a word
+											(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Deduct 100 if it splits a capcode token
 											((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
 											(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
 											(branchless.Equal(branchLength, length) * 10000) )) 		// Deduct 10,000 if the entire branch is the same size as the original first token
@@ -1011,7 +1079,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 													int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
 													((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
 													( (int(first.flag & 1) * 103) + 							// Deduct 103 if the first and second token split a word
-													(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +
+													(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +	// Deduct 100 if it splits a capcode token
 													((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
 													1 +															// Deduct 1 for using an extra token
 													(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
@@ -1027,7 +1095,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 								case -1000000:
 									// Do nothing
 								case score1:
-									scores[index].V += uint32(length) // forwardDelete is already applied to length
+									scores[original.alt.id].V += uint32(length) // forwardDelete is already applied to length
 									i += length
 									tokensInText++
 									length = length1
@@ -1035,7 +1103,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									forwardDelete = 0
 									goto checkpoint
 								case score2:
-									scores[original.alt.index].V += uint32(original.alt.length - forwardDelete)
+									scores[original.alt.id1].V += uint32(original.alt.length - forwardDelete)
 									i += original.alt.length - forwardDelete
 									tokensInText++
 									length = length2
@@ -1043,7 +1111,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									forwardDelete = 0
 									goto checkpoint
 								case score3:
-									scores[original.alt.index2].V += uint32(original.alt.length2 - forwardDelete)
+									scores[original.alt.id2].V += uint32(original.alt.length2 - forwardDelete)
 									i += original.alt.length2 - forwardDelete
 									tokensInText++
 									length = length3
@@ -1051,7 +1119,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									forwardDelete = 0
 									goto checkpoint
 								case score1b:
-									scores[index].V += uint32(length)
+									scores[original.alt.id].V += uint32(length)
 									scores[deleteToken].V++
 									i += length
 									tokensInText += 2
@@ -1060,7 +1128,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									forwardDelete = 1
 									goto checkpoint
 								case score2b:
-									scores[original.alt.index].V += uint32(original.alt.length - forwardDelete)
+									scores[original.alt.id1].V += uint32(original.alt.length - forwardDelete)
 									scores[deleteToken].V++
 									i += original.alt.length - forwardDelete
 									tokensInText += 2
@@ -1069,7 +1137,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 									forwardDelete = 1
 									goto checkpoint
 								case score3b:
-									scores[original.alt.index2].V += uint32(original.alt.length2 - forwardDelete)
+									scores[original.alt.id2].V += uint32(original.alt.length2 - forwardDelete)
 									scores[deleteToken].V++
 									i += original.alt.length2 - forwardDelete
 									tokensInText += 2
@@ -1080,7 +1148,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 							}
 						}
 						// Skipped this branch (or case -1000000 from scores)
-						scores[index].V += uint32(length) // this token saved this many characters (its length)
+						scores[original.alt.id].V += uint32(length) // this token saved this many characters (its length)
 						i += length
 						tokensInText++
 						forwardDelete = 0
@@ -1224,7 +1292,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 			tokenResult = tokenResult[0:i2]
 		}
 		// Return the result back to the master thread
-		channelResult <- resultStruct{testVocab, tokensInText, tokenResult, missingList, scoresCopy, usingFullDataset, asset.workType}
+		channelResult <- resultStruct{asset.testVocab, tokensInText, tokenResult, missingList, scoresCopy, usingFullDataset, asset.workType}
 		run++
     }
 }
@@ -1250,19 +1318,6 @@ func detectSavedFinal(path string) (uint, bool) {
 		}
 	}
 	return 0, false
-}
-
-func normalizeToken(b []byte) ([]byte, error) {
-	if charsetFlag == 1 {
-		if usingCapcode {
-			b = capcode.Encode(b)
-		}
-		return norm_UTF8_NFD(b)
-	} else if charsetFlag == 2 {
-		b, _ = uni.UTF16(uni.LittleEndian, uni.IgnoreBOM).NewEncoder().Bytes(b)
-		return norm_UTF16_NFD(b)
-	}
-	return b, nil
 }
 
 func main() {
@@ -1342,7 +1397,7 @@ func main() {
 	// Load the big dictionary of all the tokens from the dataset
 	var tokens [][]byte
 	var err error
-	usingCapcode, charsetFlag, level, _, _, tokens, err = loadTokensFromFile(dictionaryFilename)
+	usingCapcode, charsetFlag, normalizer.Flag, level, _, tokens, err = loadTokensFromFile(dictionaryFilename)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Unable to open the file:", dictionaryFilename)
 		os.Exit(1)
@@ -1375,15 +1430,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Unable to open the file:", specialTokensFilename)
 			os.Exit(1)
 		}
-		defer file.Close()
-		
 		// Read file
 		data, err := ioutil.ReadAll(file)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Error reading", specialTokensFilename, err)
 			os.Exit(1)
 		}
-		
+		file.Close()
 		// Parse JSON
 		type JsonData struct {
 			Special []string `json:"special,omitempty"`
@@ -1404,11 +1457,7 @@ func main() {
 		var on int
 		for _, s := range jd.Special {
 			if len(s) > 0 {
-				b, err := normalizeToken([]byte(s))
-				if err != nil {
-					fmt.Fprintln(os.Stderr, "Error parsing tokens in special file. Please check the encoding is correct")
-					os.Exit(1)
-				}
+				b := normalize([]byte(s))
 				if len(b) == 1 {
 					fmt.Fprintln(os.Stderr, "Error: A special token cannot be only 1 character")
 					os.Exit(1)
@@ -1426,16 +1475,21 @@ func main() {
 		case 0:
 			fmt.Println(`Charset: None`)
 		case 1:
-			if usingCapcode {
-				fmt.Println(`Charset: UTF-8, Capcode Enabled`)
-			} else {
-				fmt.Println(`Charset: UTF-8, Capcode Disabled`)
-			}
+			fmt.Println(`Charset: UTF-8`)
 		case 2:
 			fmt.Println(`Charset: UTF-16`)
 		default:
 			fmt.Fprintf(os.Stderr, "Input file appears to be corrupt")
 			os.Exit(1)
+	}
+	fmt.Println(`Normalization: ` + normalizer.String())
+	switch usingCapcode {
+		case 0:
+			fmt.Println(`Capcode: 0 (disabled)`)
+		case 1:
+			fmt.Println(`Capcode: 1 (deleteToken)`)
+		case 2:
+			fmt.Println(`Capcode: 2 (enabled)`)
 	}
 	switch level {
 		case 0:
@@ -1492,13 +1546,14 @@ func main() {
 	// Vars
 	rand.Seed(time.Now().UnixNano())
 	var i, i2, to, remainingTokens, best1percent, uniqueFileNumber, noNewBest, interval10, removed, shuffles, zeroRemoved int
-	var exists, hasTokensToRemove, reachedMidway, withinVocabX2, reachedVocab, justReset, addTokens bool
+	var exists, hasTokensToRemove, reachedMidway, withinVocabX2, reachedVocab, justReset, addTokens, noMoreVocabs bool
 	var lastIntervalFileName, debugStr, finalRunFilename, doubleVocabFilename string
 	var key []byte
 	var doubletokens, intervalTokens [][]byte
 	var double1, double2 [][]byte
 	var hash uint64
 	var c byte
+	var counterMultiDeletes *pansearch.Counter
 	tokensToRemove := new(pansearch.Counter)
 	dictsWithin1percent := make([]bestStruct, 0, 100)
 	var best int = MAXINT
@@ -1532,6 +1587,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		var numberPart string
 		for _, file := range files {
 			fpath := filepath.Join(resultsDir, file.Name())
 			if strings.HasPrefix(file.Name(), `doublevocab_`) {
@@ -1553,62 +1609,36 @@ func main() {
 					fmt.Printf("Error: %s\n", err)
 					os.Exit(1)
 				}
-				numberPart := string(file.Name()[strings.Index(file.Name(), "_")+1 : strings.Index(file.Name(), ".")])
-				fmt.Println(`Resuming from interval file with`, numberPart, `tokens`)
+				numberPart = string(file.Name()[strings.Index(file.Name(), "_")+1 : strings.Index(file.Name(), ".")])
 			}
+		}
+		if len(numberPart) != 0 {
+			fmt.Println(`Resuming from interval file with`, numberPart, `tokens`)
 		}
 	}
 
 	// Build the ungreedy preference lookup table
 	// If there are multiple options of ungreedy alternative, these are the preferred points
 	ungreedySuffixesB = make([][]byte, len(ungreedySuffixes))
-	if charsetFlag == 1 {
+	if charsetFlag < 2 {
 		for i, suffix := range ungreedySuffixes {
 			ungreedySuffixesB[i] = []byte(suffix)
 		}
 	} else if charsetFlag == 2 {
 		for i, suffix := range ungreedySuffixes {
-			ungreedySuffixesB[i] = convertStringToUTF16WithNFDNormalization(suffix)
+			ungreedySuffixesB[i] = convertStringToUTF16(suffix)
 		}
 	}
 
 	fmt.Println(`Loading`, datasetFilename)
 	// Load the text & normalize UTF8
 	var filedata []byte
-	{
-		var temp []byte
-		temp, err = ioutil.ReadFile(datasetFilename)
-		if err != nil {
-			panic(err)
-		}
-		switch charsetFlag {
-			case 0: // none
-				filedata = temp
-			case 1: // utf-8
-				if usingCapcode {
-					filedata = capcode.Encode(temp)
-				} else {
-					filedata = capcode.NoCapcodeEncode(temp)
-				}
-				filedata, err = norm_UTF8_NFD(filedata)
-				if err != nil { // if it fails try the other way around
-					filedata, err = norm_UTF8_NFD(temp)
-					if usingCapcode {
-						filedata = capcode.Encode(filedata)
-					} else {
-						filedata = capcode.NoCapcodeEncode(filedata)
-					}
-				}
-				if err != nil {
-					panic(err)
-				}
-			case 2:
-				filedata, err = norm_UTF16_NFD(temp)
-				if err != nil {
-					panic(err)
-				}
-		}
+	filedata, err = ioutil.ReadFile(datasetFilename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Dataset file does not exist or cannot be opened: " + datasetFilename + "\n")
+		os.Exit(1)
 	}
+	filedata = normalize(filedata)
 	dataLen := len(filedata)
 
 	// Distribute the text randomly but evenly to each worker has x strips each from a different part of filedata
@@ -1695,21 +1725,35 @@ func main() {
 		}
 	}
 	// Remove deleted and separate single byte tokens (they are added to every vocabulary)
-	i2 = 0
-	for _, tok := range tokens {
-		if len(tok) == 0 {
-			continue
-		}
-		if len(tok) == 1 {
-			if !excludeOtherBytes {
-				includeBytes[tok[0]] = true
+	{
+		uniqueTokens := new(pansearch.Counter)
+		var r rune
+		for _, tok := range tokens {
+			if len(tok) == 0 {
+				continue
 			}
-		} else {
-			tokens[i2] = tok
-			i2++
+			if len(tok) == 1 {
+				if !excludeOtherBytes {
+					includeBytes[tok[0]] = true
+				}
+			} else {
+				// We remove "D " from the beginnings because we will add it back later
+				if tok[1] == ' ' {
+					if (tok[0] == capcode.DeleteToken && usingCapcode == 2) || (usingCapcode == 1 && tok[0] == capcode.NoCapcodeDeleteToken) {
+						if len(tok) > 2 {
+							r, _ = decodeRune(tok[2:])
+							if isAlphaNum(r) {
+								tok = tok[2:]
+							}
+						}
+					}
+				}
+				uniqueTokens.Add(tok, 1)
+			}
 		}
+		uniqueTokens.Build()
+		tokens = uniqueTokens.Keys()
 	}
-	tokens = tokens[0:i2]
 	i2 = 0
 	for _, tok := range doubletokens {
 		if len(tok) <= 1 {
@@ -1719,12 +1763,12 @@ func main() {
 		i2++
 	}
 	doubletokens = doubletokens[0:i2]
-	if usingCapcode {
+	if usingCapcode == 2 {
 		includeBytes[capcode.DeleteToken] = true
-	} else {
-		if charsetFlag == 1 {
-			includeBytes[capcode.NoCapcodeDeleteToken] = true
-		}
+		includeBytes[capcode.CharacterToken] = true
+		includeBytes[capcode.WordToken] = true
+	} else if usingCapcode == 1 {
+		includeBytes[capcode.NoCapcodeDeleteToken] = true
 	}
 	var singleChars [][]byte
 	for i=0; i<256; i++ {
@@ -1781,7 +1825,7 @@ func main() {
 					if i > 0 {
 						vocabDiff = len(singleChars) + len(specialTokens)
 						vocabSizeEffective = vocabSize - vocabDiff
-						log.Println(i, `missing character(s) found and added to reserved tokens`)
+						log.Println(i, `missing character(s) found and added to single byte tokens`)
 					}
 				}
 
@@ -1808,7 +1852,7 @@ func main() {
 					if result.tokensInText < best1percent {
 						filename := resultsDir + conv.String(result.tokensInText) + "_" + conv.String(uniqueFileNumber) + ".tok"
 						uniqueFileNumber++
-						err = saveTokensToFile(filename, result.testVocab.Keys(), nil, nil, result.scores, len(filedata))
+						err = saveTokensToFile(filename, result.testVocab.Keys(), nil, nil, result.scores, len(filedata), specialTokens)
 						if err != nil {
 							panic(err)
 						}
@@ -1873,6 +1917,9 @@ func main() {
 						i2 = branchless.Min(i2 + zeroRemoved, len(result.tokensToRemove))
 						for i=0; i<i2; i++ {
 							tokensToRemove.Add(result.tokensToRemove[i], 1)
+							if counterMultiDeletes != nil {
+								counterMultiDeletes.Add(result.tokensToRemove[i], remainingTokens - vocabSizeEffective)
+							}
 						}
 						hasTokensToRemove = true
 					}
@@ -1918,18 +1965,18 @@ func main() {
 				if best != MAXINT {
 					debugStr += ` Best: ` + formatInt(best)
 				}
-				if noNewBest > 0 {
+				if reachedVocab && noNewBest > 0 {
 					debugStr += `; Tries:` + formatInt(noNewBest)
 				}
 				log.Println(`Deleted`, formatInt(removed), `of`, formatInt(tokensToRemove.Len()), `tokens; Remaining`, formatInt(remainingTokens + vocabDiff), `tokens;`, debugStr)
 				if remainingTokens <= midwayTarget && !reachedMidway {
-					saveTokensToFile(resultsDir + `midwaypoint_` + conv.String(remainingTokens + vocabDiff) + `.tok`, tokens, specialTokens, singleChars, nil, len(filedata))
+					saveTokensToFile(resultsDir + `midwaypoint_` + conv.String(remainingTokens + vocabDiff) + `.tok`, tokens, specialTokens, singleChars, nil, len(filedata), nil)
 					log.Println(`Reached midway target`)
 					reachedMidway = true
 				}
 				if remainingTokens <= vocabSize * 2 && !withinVocabX2  {
 					doubleVocabFilename = resultsDir + `doublevocab_` + conv.String(remainingTokens + vocabDiff) + `.tok`
-					saveTokensToFile(doubleVocabFilename, tokens, specialTokens, singleChars, nil, len(filedata))
+					saveTokensToFile(doubleVocabFilename, tokens, specialTokens, singleChars, nil, len(filedata), nil)
 					doubletokens = make([][]byte, len(tokens))
 					for i, v := range tokens {
 						doubletokens[i] = v
@@ -1940,11 +1987,17 @@ func main() {
 				}
 				justReset = false
 				// Reached the end?
-				if remainingTokens < vocabSizeEffective || shuffles == 10000 { // its okay to do this multiple times
+				if remainingTokens < vocabSizeEffective || noMoreVocabs { // its okay to do this multiple times
 					log.Println(`Reached vocab size`)
+					noMoreVocabs = false
 					// Now make the the final tokens, from all the tokens that are present in all tokensets that are within 1% of the best score
 					uniqueTokens := new(pansearch.Counter)
 					if len(finalRunFilename) > 0 { // second time
+						if counterMultiDeletes == nil {
+							counterMultiDeletes = new(pansearch.Counter)
+						} else {
+							counterMultiDeletes.Build()
+						}
 						_, _, _, _, _, toks, err := loadTokensFromFile(finalRunFilename)
 						if err != nil {
 							panic(err)
@@ -1953,14 +2006,18 @@ func main() {
 							for _, b := range toks {
 								if len(b) > 1 {
 									if _, exists = specialMap[string(b)]; !exists {
-										uniqueTokens.Add(b, 1)
+										if i, exists = counterMultiDeletes.Find(b); !exists || i < 4000 {
+											uniqueTokens.Add(b, 1)
+										}
 									}
 								}
 							}
 						} else {
 							for _, b := range toks {
 								if len(b) > 1 {
-									uniqueTokens.Add(b, 1)
+									if i, exists = counterMultiDeletes.Find(b); !exists || i < 4000 {
+										uniqueTokens.Add(b, 1)
+									}
 								}
 							}
 						}
@@ -1996,7 +2053,8 @@ func main() {
 						tokens = uniqueTokens.Keys() // this is all the tokens that are present in those within 1% of the best score
 						noNewBest = 0
 						finalRunFilename = resultsDir + `finalrun_` + conv.String(len(tokens) + vocabDiff) + `.tok`
-						saveTokensToFile(finalRunFilename, tokens, specialTokens, singleChars, nil, len(filedata))
+						saveTokensToFile(finalRunFilename, tokens, specialTokens, singleChars, nil, len(filedata), nil)
+						counterMultiDeletes = new(pansearch.Counter)
 					}
 					// Add from double tokens
 					addlist := make([][]byte, 0, 1000)
@@ -2007,7 +2065,9 @@ func main() {
 							if len(b) > 1 {
 								if _, exists = specialMap[string(b)]; !exists {
 									if _, exists = uniqueTokens.Find(b); !exists {
-										addlist = append(addlist, b)
+										if i2, exists = counterMultiDeletes.Find(b); !exists || i2 < 1000 {
+											addlist = append(addlist, b)
+										}
 										if i++; i >= n {
 											break
 										}
@@ -2020,7 +2080,9 @@ func main() {
 							if len(b) > 1 {
 								if _, exists = specialMap[string(b)]; !exists {
 									if _, exists = uniqueTokens.Find(b); !exists {
-										addlist = append(addlist, b)
+										if i2, exists = counterMultiDeletes.Find(b); !exists || i2 < 1000 {
+											addlist = append(addlist, b)
+										}
 										if i++; i >= n {
 											break
 										}
@@ -2033,7 +2095,9 @@ func main() {
 						for _, b := range double1 {
 							if len(b) > 1 {
 								if _, exists = uniqueTokens.Find(b); !exists {
-									addlist = append(addlist, b)
+									if i2, exists = counterMultiDeletes.Find(b); !exists || i2 < 1000 {
+										addlist = append(addlist, b)
+									}
 									if i++; i >= n {
 										break
 									}
@@ -2044,7 +2108,9 @@ func main() {
 						for _, b := range double2 {
 							if len(b) > 1 {
 								if _, exists = uniqueTokens.Find(b); !exists {
-									addlist = append(addlist, b)
+									if i2, exists = counterMultiDeletes.Find(b); !exists || i2 < 1000 {
+										addlist = append(addlist, b)
+									}
 									if i++; i >= n {
 										break
 									}
@@ -2078,7 +2144,7 @@ func main() {
 							os.Remove(lastIntervalFileName)
 						}
 						lastIntervalFileName = resultsDir + `interval_` + conv.String(remainingTokens + vocabDiff) + `.tok`
-						saveTokensToFile(lastIntervalFileName, tokens, specialTokens, singleChars, nil, len(filedata)) // save interval file
+						saveTokensToFile(lastIntervalFileName, tokens, specialTokens, singleChars, nil, len(filedata), nil) // save interval file
 						interval10 = 0
 					}
 				}
@@ -2089,30 +2155,30 @@ func main() {
 				addTokens = false
 				if (len(doubletokens) >= vocabSizeEffective) {
 					shuffle(doubletokens)
-					testVocab1 := new(pansearch.Fast)
-					testVocab2 := new(pansearch.Fast)
+					testVocab1 := new(pansearch.Light)
+					testVocab2 := new(pansearch.Light)
 					// Add single character tokens to every vocabulary
 					for _, v := range singleChars {
-						testVocab1.Add(v)
-						testVocab2.Add(v)
+						testVocab1.AddUnsorted(v)
+						testVocab2.AddUnsorted(v)
 					}
 					// Add special tokens
 					for _, v := range specialTokens {
-						testVocab1.Add(v)
-						testVocab2.Add(v)
+						testVocab1.AddUnsorted(v)
+						testVocab2.AddUnsorted(v)
 					}
 					// Add regular tokens
 					for i=0; i<vocabSizeEffective; i++ {
-						testVocab1.Add(doubletokens[i])
+						testVocab1.AddUnsorted(doubletokens[i])
 					}
 					to = vocabSizeEffective * 2
 					for ; i<to && i<len(doubletokens); i++ {
-						testVocab2.Add(doubletokens[i])
+						testVocab2.AddUnsorted(doubletokens[i])
 					}
 					if len(doubletokens) < to {
 						to -= len(doubletokens)
 						for i=0; i<to; i++ {
-							testVocab2.Add(doubletokens[i])
+							testVocab2.AddUnsorted(doubletokens[i])
 						}
 					}
 					testVocab1.Build()
@@ -2125,7 +2191,7 @@ func main() {
 			// Shuffle the dictionary and send it out to the workers
 			shuffles = 0
 			for atLeast1UniqueVocab := false; !atLeast1UniqueVocab; { // keep trying until at least 1 vocabulary is generated
-				if shuffles == 10000 || (shuffles > 0 && remainingTokens <= vocabSizeEffective) { // stuck in a loop because all vocabs have been tried already
+				if shuffles == 5000 || (shuffles > 0 && remainingTokens <= vocabSizeEffective) { // stuck in a loop because all vocabs have been tried already
 					if justReset { // every possibility has been tried
 						log.Println(`-- FINISHED --`)
 						fmt.Println(`All near vocabularies have been tested`)
@@ -2144,6 +2210,7 @@ func main() {
 						os.Exit(0)
 					}
 					hasTokensToRemove = true
+					noMoreVocabs = true
 					break
 				}
 				shuffle(tokens)
@@ -2154,20 +2221,21 @@ func main() {
 					if to > len(tokens) {
 						break
 					}
-					testVocab := new(pansearch.Fast)
+					testVocab := new(pansearch.Light)
 					// Add single character tokens to every vocabulary
 					for _, v := range singleChars {
-						testVocab.Add(v)
+						testVocab.AddUnsorted(v)
 					}
 					// Add regular tokens
 					for ; i<to; i++ {
-						testVocab.Add(tokens[i])
+						testVocab.AddUnsorted(tokens[i])
 					}
 					// Add special tokens
 					for _, v := range specialTokens {
-						testVocab.Add(v)
+						testVocab.AddUnsorted(v)
 					}
 					testVocab.Build()
+
 					// If withinVocabX2, make FNV-1a 64-bit hash out of the vocabulary and use this to determine whether its unique
 					exists = false
 					if withinVocabX2 {

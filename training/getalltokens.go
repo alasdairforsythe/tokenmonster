@@ -1,7 +1,7 @@
 package main
 
 /*
-	Filter testing: https://goplay.tools/snippet/EGaohLGHbFn
+	Filter testing: https://goplay.tools/snippet/Bmuh4tAUuup
 */
 
 import (
@@ -11,8 +11,6 @@ import (
 	"flag"
 	"sync"
 	"time"
-	"bytes"
-	"errors"
 	"strings"
 	"runtime"
 	"reflect"
@@ -21,11 +19,9 @@ import (
 	"unicode/utf8"
 	"unicode/utf16"
 	"encoding/binary"
-	"golang.org/x/text/transform"
-	"golang.org/x/text/unicode/norm"
-	uni "golang.org/x/text/encoding/unicode"
 	"github.com/AlasdairF/Custom"
 	"github.com/AlasdairF/Conv"
+	"github.com/alasdairforsythe/norm"
 	"github.com/alasdairforsythe/pansearch"
 	"github.com/alasdairforsythe/capcode/go"
 )
@@ -68,22 +64,6 @@ var delimiterPairs = map[rune]rune{
 	'⸨': '⸩',
 }
 
-var delimiters = map[rune]bool{
-	'(': true, ')': true, '[': true, ']': true, '{': true, '}': true, '\'': true, 
-    '"': true, '‘': true, '’': true, '“': true, '”': true, '«': true, '»': true, 
-    '‹': true, '›': true, '‛': true, '`': true, '„': true, '″': true, '〝': true, 
-    '〞': true, '「': true, '」': true, '『': true, '』': true, '｢': true, '｣': true, 
-    '〈': true, '〉': true, '《': true, '》': true, '‟': true, '❛': true, '❜': true, 
-    '❝': true, '❞': true, '❮': true, '❯': true, '〔': true, '〕': true, '⸨': true, '⸩': true,
-}
-
-/*
-
-The defaults are good for an 840MB dataset with peak RAM usage around 200GB.
-microChunks can be increased to reduce memory usage, but at a massive cost of performance.
-
-*/
-
 var (
 	datasetFilename string
 	saveFilename string
@@ -95,15 +75,20 @@ var (
 	chunkSizeString string
 	microChunks int = 5
 	minOccurPerMicroChunk int = 2
-	usingCapcode bool = true
+	usingCapcode uint8
+	capcodeFlag int = 2
 	disableCapcode bool = false
 	charset string
 	charsetFlag uint8
+	normalizer norm.Normalizer
 	multithreaded bool
 	levelFlag string
 	level uint8
 	charTable [256]int
 	numWorkers int = 8
+	onlyLatin bool
+	onlyValid bool
+	normFlag string
 )
 
 type workStruct struct {
@@ -133,32 +118,11 @@ func formatInt(v int) string {
 	return string(conv.FormatThousands(conv.Bytes(v), ','))
 }
 
-func norm_UTF8_NFD(input []byte) (output []byte, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			// Convert panic into error
-			err = errors.New(`UTF-8 NFD normalization panicked`)
-		}
-	}()
-	normalized := bytes.NewBuffer(make([]byte, 0, len(input) + (len(input) / 3) + 4))
-	normalizer := norm.NFD.Writer(normalized)
-	_, err = normalizer.Write(input)
-	if err != nil {
-		return nil, err
-	}
-	err = normalizer.Close()
-	if err != nil {
-		return nil, err
-	}
-	output = normalized.Bytes()
-	return output, err
-}
-
+/*
 func norm_UTF16_NFD(input []byte) ([]byte, error) {
-	// Assume LittleEndian if not specified
+	// Assume LittleEndian by default
 	endian := uni.LittleEndian
 	bomPolicy := uni.IgnoreBOM
-	// Check for BOM
 	if len(input) >= 2 {
 		if input[0] == 0xFE && input[1] == 0xFF {
 			endian = uni.BigEndian
@@ -170,11 +134,11 @@ func norm_UTF16_NFD(input []byte) ([]byte, error) {
 	}
 	// Attempt to decode the input with decided endian
 	utf16Decoder := uni.UTF16(endian, bomPolicy)
-	// Create a transformer to decode to UTF-8 and normalize the text to NFD
+	// Create a transformer to decode to UTF-16 and normalize the text to NFD
 	transformer := transform.Chain(utf16Decoder.NewDecoder(), norm.NFD)
 	// Create a reader with the transformer
 	reader := transform.NewReader(bytes.NewReader(input), transformer)
-	// Read normalized NFD UTF-8 bytes
+	// Read normalized NFD UTF-16 bytes
 	nfdBytes, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("Error normalizing content: %w", err)
@@ -189,8 +153,36 @@ func norm_UTF16_NFD(input []byte) ([]byte, error) {
 	}
 	return utf16LEBytes, nil
 }
+*/
 
-func saveTokensToFile(filename string, obj *pansearch.Counter, specifyLevel uint8) error {
+func applyCapcode(data []byte) []byte {
+	if usingCapcode == 2 {
+		return capcode.Encode(data)
+	} else if usingCapcode == 1 {
+		return capcode.NoCapcodeEncode(data)
+	}
+	return data
+}
+
+func normalize(data []byte) []byte {
+	processed, err := normalizer.Normalize(data)
+	if err == nil {
+		return applyCapcode(processed)
+	} else { // if failed try it the other way around
+		if !normalizer.SpecifiedLowercase() {
+			processed = applyCapcode(data)
+			processed, err = normalizer.Normalize(processed)
+			if err != nil {
+				panic(err)
+			}
+		} else {
+			panic(err)
+		}
+	}
+	return processed
+}
+
+func saveTokensToFile(filename string, obj *pansearch.Counter) error {
 	fi, err := os.Create(filename)
 	if err != nil {
 		return err
@@ -199,11 +191,14 @@ func saveTokensToFile(filename string, obj *pansearch.Counter, specifyLevel uint
 	w := custom.NewZlibWriter(fi)
 	defer w.Close()
 
-	w.WriteBool(usingCapcode)
+	w.WriteByte(usingCapcode)
 	w.WriteByte(charsetFlag)
-	w.WriteByte(specifyLevel)
+	w.WriteByte(normalizer.Flag)
+	w.WriteByte(level)
 	w.WriteByte(0) // reserve
-	w.WriteByte(0) // custom
+	w.WriteByte(0) // reserve
+	w.WriteByte(0) // reserve
+	w.WriteByte(0) // reserve
 
 	singleChars := make([]byte, 256)
 	var on int
@@ -231,12 +226,48 @@ func saveTokensToFile(filename string, obj *pansearch.Counter, specifyLevel uint
 	return nil
 }
 
+func isLatin(b []byte) bool {
+	for len(b) > 0 {
+		r, n := decodeRune(b)
+		if unicode.IsLetter(r) && !unicode.Is(unicode.Latin, r) {
+			return false
+		}
+		b = b[n:]
+	}
+	return true
+}
+
+func isValid(b []byte) bool {
+	if charsetFlag != 2 {
+		return utf8.Valid(b)
+	}
+	for len(b) > 0 {
+		r, n := decodeRune(b)
+		if r == runeError {
+			return false
+		}
+		b = b[n:]
+	}
+	return true
+}
+
+func isValidLatin(b []byte) bool {
+	for len(b) > 0 {
+		r, n := decodeRune(b)
+		if r == runeError || (unicode.IsLetter(r) && !unicode.Is(unicode.Latin, r)) {
+			return false
+		}
+		b = b[n:]
+	}
+	return true
+}
+
 func isLetter(r rune) bool {
-	return (unicode.IsLetter(r) && (!usingCapcode || (r != 'W' && r != 'C' && r != 'D'))) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
+	return (unicode.IsLetter(r) && (usingCapcode!=2 || (r != 'W' && r != 'C' && r != 'D'))) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
 }
 
 func isCapcode(r rune) bool {
-	return r == '\x7F' || (usingCapcode && (r == 'C' || r == 'W' || r == 'D'))
+	return (usingCapcode == 1 && r == '\x7F') || (usingCapcode==2 && (r == 'C' || r == 'W' || r == 'D'))
 }
 
 func isOther(r rune) bool {
@@ -244,7 +275,7 @@ func isOther(r rune) bool {
 }
 
 func isAlphaNum(r rune) bool {
-	return (unicode.IsLetter(r) && (!usingCapcode || (r != 'W' && r != 'C' && r != 'D'))) || unicode.IsNumber(r) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
+	return (unicode.IsLetter(r) && (usingCapcode!=2 || (r != 'W' && r != 'C' && r != 'D'))) || unicode.IsNumber(r) || unicode.Is(unicode.Mn, r) || unicode.Is(unicode.Mc, r) || unicode.Is(unicode.Me, r)
 }
 
 /*
@@ -255,13 +286,18 @@ func isDelimiter(r rune) bool {
 	return false
 }
 */
+
 func isDelimiter(r rune) bool {
 	return delimiters[r]
 }
 
+func isDelimiterConsistent(r rune) bool {
+	return delimiters2[r]
+}
+
 func decodeRune(b []byte) (rune, int) {
 	switch charsetFlag {
-		case 1: // UTF-8
+		case 0, 1: // UTF-8
 			return utf8.DecodeRune(b)
 		case 2: // UTF-16
 			if len(b) < 2 {
@@ -291,7 +327,7 @@ func decodeRune(b []byte) (rune, int) {
 
 func decodeLastRune(b []byte) (rune, int) {
 	switch charsetFlag {
-		case 1: // UTF-8
+		case 0, 1: // UTF-8
 			return utf8.DecodeLastRune(b)
 		case 2: // UTF-16
 			if len(b) < 2 {
@@ -461,7 +497,7 @@ func filterClean(tok []byte) ([]byte, bool) {
 		}
 	}
 	// If it contains letters or numbers or capcode it may not end with a space
-	if charsetFlag != 0 && ((hasAlpha || hasCapcode || exists || (other && isAlphaNum(rnext))) && r == ' ' && !removed) {
+	if usingCapcode != 0 && ((hasAlpha || hasCapcode || exists || (other && isAlphaNum(rnext))) && r == ' ' && !removed) {
 		return trimmed, false
 	}
 	return trimmed, true
@@ -537,7 +573,7 @@ func filterBalanced(tok []byte) ([]byte, bool) {
 		}
 	}
 	// If it contains letters or numbers, don't end on capcode wordToken or CharacterToken unless preceded by .
-	if hasAlpha && usingCapcode && isCapcode(r) {
+	if hasAlpha && usingCapcode==2 && isCapcode(r) {
 		if len(tok) < 3 {
 			return tok, false
 		}
@@ -546,11 +582,11 @@ func filterBalanced(tok []byte) ([]byte, bool) {
 		}
 	}
 	// If it contains letters or numbers or capcode it may not end with any kind of space
-	if charsetFlag != 0 && ((hasAlpha || hasCapcode) && unicode.IsSpace(r)) {
+	if usingCapcode != 0 && ((hasAlpha || hasCapcode) && unicode.IsSpace(r)) {
 		return tok, false
 	}
 	// If it contains punctuation it may not end with a space
-	if charsetFlag != 0 && (other || exists) && r == ' ' {
+	if usingCapcode != 0 && (other || exists) && r == ' ' {
 		return tok, false
 	}
 	// Don't do a full word, then half of the next word
@@ -719,14 +755,18 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 	}
 
 	var numDelim, numCapcode, numSpace, numNewline, numOther, spacesRun, maxSpacesRun, nSpaceRuns uint8
-	var lastSpace bool
+	var lastSpace, gt bool
+	var delim rune
+	var delimPos int
 	for i := 0; i < len(tok); i += n3 {
 		r3, n3 = decodeRune(tok[i:])
 		switch {
 		case isAlphaNum(r3):
 			return trimmed, false
-		case isDelimiter(r3):
+		case isDelimiterConsistent(r3):
 			numDelim++
+			delim = r3
+			delimPos = i
 			lastSpace = false
 		case isCapcode(r3):
 			numCapcode++
@@ -748,6 +788,12 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 		default:
 			numOther++
 			lastSpace = false
+			if gt && r3 == '<' {
+				return trimmed, false
+			}
+			if r3 == '>' {
+				gt = true
+			}
 		}
 	}
 	if spacesRun > maxSpacesRun {
@@ -767,11 +813,29 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 	if maxSpacesRun > 1 && (numDelim != 0 || numCapcode != 0 || numOther != 0) && ((numSpace != numNewline || (numOther+numDelim) > 3) || nSpaceRuns > 1) {
 		return trimmed, false
 	}
+	// Don't allow more than 1 delimeter (pairs on the front and back are allowed earlier)
 	if numDelim > 1 || (numDelim > 0 && openCloseStripped) {
 		return trimmed, false
 	}
 	otherAndSpace := numOther + numSpace + numCapcode
 	if numDelim == 1 {
+		var b byte
+		switch delim {
+		case '(', '[', '{':
+			for i := 0; i < delimPos; i++ {
+				b = tok[i]
+				if b != ',' && b != '.' && b != ' ' && b != '\r' && b != '\n' {
+					return trimmed, false
+				}
+			}
+		case ')', ']', '}':
+			for i := delimPos + 1; i < len(tok); i++ {
+				b = tok[i]
+				if b != ',' && b != '.' && b != ' ' && b != '\r' && b != '\n' {
+					return trimmed, false
+				}
+			}
+		}
 		if isDelimiter(r1) {
 			if len(tok) <= 3 && numSpace <= 1 {
 				return trimmed, true
@@ -897,7 +961,7 @@ func filterStrict(tok []byte) ([]byte, bool) {
 	}
 
 	var numDelim, numCapcode, numSpace, numNewline, numOther, spacesRun, maxSpacesRun, nSpaceRuns uint8
-	var lastSpace bool
+	var lastSpace, gt bool
 	for i := 0; i < len(tok); i += n3 {
 		r3, n3 = decodeRune(tok[i:])
 		switch {
@@ -926,6 +990,12 @@ func filterStrict(tok []byte) ([]byte, bool) {
 		default:
 			numOther++
 			lastSpace = false
+			if gt && r3 == '<' {
+				return trimmed, false
+			}
+			if r3 == '>' {
+				gt = true
+			}
 		}
 	}
 	if spacesRun > maxSpacesRun {
@@ -1472,7 +1542,8 @@ func containsOnlyNumbers(input string) bool {
 func main() {
 	flag.StringVar(&datasetFilename, "dataset", datasetFilename, "filename of the dataset plain-text (required)")
 	flag.StringVar(&saveFilename, "output", saveFilename, "output filename for the dictionary (required)")
-	flag.StringVar(&charset, "charset", charset, "one of: UTF-8, UTF-16, none (required)")
+	flag.StringVar(&charset, "charset", charset, "one of: UTF-8, none (default UTF-8)")
+	flag.StringVar(&normFlag, "norm", normFlag, "combine any of the following: NFD, lowercase, accents, quotemarks, collapse, trim, leadingspace, newlines (default NFD)")
 	flag.IntVar(&numWorkers, "workers", numWorkers, "number of worker threads to run")
 	flag.IntVar(&maxTokenLength, "max-token-length", maxTokenLength, "the maximum length of a token")
 	flag.IntVar(&minOccurPerChunk, "min-occur-chunk", minOccurPerChunk, "tokens will be trimmed if they occur less frequently than this per chunk")
@@ -1480,14 +1551,28 @@ func main() {
 	flag.IntVar(&minOccurTotal, "min-occur", minOccurTotal, "tokens will be trimmed if they occur less frequently than this in the dataset (default 1 per 10MB)")
 	flag.StringVar(&chunkSizeString, "chunk-size", chunkSizeString, "the number of bytes processed at a time, higher is faster but requires more RAM (default 100MB)")
 	flag.IntVar(&microChunks, "micro-chunks", microChunks, "the higher this number, the slower it is but it will reduce peak memory usage")
-	flag.BoolVar(&disableCapcode, "disable-capcode", disableCapcode, "disables capcode normalizations (default false)")
+	flag.IntVar(&capcodeFlag, "capcode", capcodeFlag, "0 = disabled, 1 = deleteToken only, 2 = enabled")
+	flag.BoolVar(&onlyLatin, "only-latin", onlyLatin, "if enabled, tokens that contains letters must be in Latin script (default false)")
+	flag.BoolVar(&onlyValid, "only-valid", onlyValid, "if enabled, tokens must contain full and valid characters, except single byte tokens (default false)")
 	flag.IntVar(&minOccurSingles, "min-occur-byte", minOccurSingles, "single bytes will be trimmed if they occur less frequently than this in the dataset (default min-occur)")
 	flag.StringVar(&levelFlag, "mode", levelFlag, "0 = unfiltered, 1 = clean, 2 = balanced, 3 = consistent, 4 = strict (required)")
 	flag.Parse()
 	flagRequired("dataset", datasetFilename)
 	flagRequired("output", saveFilename)
-	flagRequired("charset", charset)
 	flagRequired("mode", levelFlag)
+
+	usingCapcode = uint8(capcodeFlag)
+	var err error
+	normalizer, err = norm.NewNormalizer(normFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stdout, err)
+		os.Exit(1)
+	}
+	if normalizer.SpecifiedLowercase() && usingCapcode == 2 {
+		fmt.Fprintf(os.Stderr, "You cannot normalize to lowercase and also encode uppercase with capcode level 2.\nChoose either capcode level 1 (deleteToken), or remove 'lowercase' from the -norm flag.\n")
+		os.Exit(1)
+	}
+
 	if len(chunkSizeString) > 0 {
 		chunkSizeString = strings.ToLower(chunkSizeString)
 		l := len(chunkSizeString)
@@ -1544,46 +1629,61 @@ func main() {
 		fmt.Fprintf(os.Stderr, "max-token-length must be between 2 and 40\n")
 		os.Exit(1)
 	}
-	if disableCapcode {
-		usingCapcode = false
-	}
-	if microChunks <= 1 {
+	if microChunks < 1 {
 		microChunks = 1
+	}
+	if len(charset) == 0 {
+		charset = `utf8`
 	}
 	switch strings.ToLower(charset) {
 		case "utf8":
 			fallthrough
 		case "utf-8":
 			charsetFlag = 1
-			if usingCapcode {
-				fmt.Println(`Charset: UTF-8, Capcode Enabled`)
-			} else {
-				fmt.Println(`Charset: UTF-8, Capcode Disabled`)
+			if len(normFlag) == 0 { // default for UTF-8 is NFD normalization
+				normalizer, _ = norm.NewNormalizer(`nfd`)
 			}
+			fmt.Println(`Charset: UTF-8`)
 		case "utf16":
 			fallthrough
 		case "utf-16":
+			fmt.Fprintf(os.Stderr, "UTF-16 support is not yet fully implemented\n")
+            os.Exit(0)
+			/*
 			charsetFlag = 2
-			if usingCapcode {
-				fmt.Fprintf(os.Stderr, "capcode is currently only supported with UTF-8 encoding\n")
+			if usingCapcode != 0 {
+				fmt.Fprintf(os.Stderr, "capcode is not supported with UTF-16 encoding\n")
 				flag.Usage()
 				os.Exit(1)
 			}
-			fmt.Println(`Charset: UTF-16, Capcode Disabled`)
+			fmt.Println(`Charset: UTF-16`)
+			*/
 		case "none":
 			fallthrough
 		case "binary":
-			charsetFlag = 0
-			if usingCapcode {
-				fmt.Fprintf(os.Stderr, "capcode is currently only supported with UTF-8 encoding\n")
-				flag.Usage()
-				os.Exit(1)
+			if normalizer.SpecifiedNFD() {
+				fmt.Fprintf(os.Stderr, "To use NFD normalization, choose charset UTF-8\n")
+            	os.Exit(1)
 			}
+			if onlyValid {
+				fmt.Fprintf(os.Stderr, "To use -only-valid, you must select a charset\n")
+            	os.Exit(1)
+			}
+			charsetFlag = 0
 			fmt.Println(`Charset: None`)
 		default:
 			fmt.Fprintf(os.Stderr, "-charset must be one of: UTF-8, UTF-16, none\n")
             flag.Usage()
             os.Exit(1)
+	}
+	fmt.Println(`Normalization: ` + normalizer.String())
+	switch usingCapcode {
+		case 0:
+			fmt.Println(`Capcode: 0 (disabled)`)
+		case 1:
+			fmt.Println(`Capcode: 1 (deleteToken)`)
+		case 2:
+			fmt.Println(`Capcode: 2 (enabled)`)
 	}
 	switch strings.ToLower(levelFlag) {
 		case "0":
@@ -1615,50 +1715,29 @@ func main() {
 			fmt.Fprintf(os.Stderr, "mode must be one of: unfiltered, balanced, consistent, strict, all\n")
 			os.Exit(1)
 	}
-	if level >= 3 && charsetFlag != 1 {
-		fmt.Fprintf(os.Stderr, "EXITING: Optimization modes 'consistent' and 'strict' are only available with -charset UTF8\n")
+	if level >= 3 && usingCapcode == 0 {
+		fmt.Fprintf(os.Stderr, "EXITING: Optimization modes 'consistent' and 'strict' require capcode level 1 or 2\n")
 		os.Exit(1)
+	}
+	if onlyLatin {
+		fmt.Println(`Only Latin script allowed`)
+	}
+	if onlyValid {
+		if charsetFlag == 2 {
+			fmt.Println(`Only valid UTF-16 allowed`)
+		} else {
+			fmt.Println(`Only valid UTF-8 allowed`)
+		}
 	}
 
 	// Load the text & normalize
 	log.Println(`Loading`, datasetFilename)
-	var err error
-	var filedata []byte
-	{
-		var temp []byte
-		temp, err = ioutil.ReadFile(datasetFilename)
-		if err != nil {
-			panic(err)
-		}
-		switch charsetFlag {
-			case 0: // none
-				filedata = temp
-			case 1: // utf-8
-				// The normalization function has a bug which I'm working around with the catch
-				if usingCapcode {
-					filedata = capcode.Encode(temp)
-				} else {
-					filedata = capcode.NoCapcodeEncode(temp)
-				}
-				filedata, err = norm_UTF8_NFD(filedata)
-				if err != nil {
-					filedata, err = norm_UTF8_NFD(temp)
-					if usingCapcode {
-						filedata = capcode.Encode(filedata)
-					} else {
-						filedata = capcode.NoCapcodeEncode(filedata)
-					}
-				}
-				if err != nil {
-					panic(err)
-				}
-			case 2:
-				filedata, err = norm_UTF16_NFD(temp)
-				if err != nil {
-					panic(err)
-				}
-		}
+	filedata, err := ioutil.ReadFile(datasetFilename)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Dataset file does not exist or cannot be opened: " + datasetFilename + "\n")
+		os.Exit(1)
 	}
+	filedata = normalize(filedata)
 
 	if minOccurTotal == 0 {
 		minOccurTotal = len(filedata) / 10000000
@@ -1771,14 +1850,53 @@ func main() {
 	log.Println(`Tokens before final trim:`, formatInt(tokens.Len()))
 	log.Println(`Trimming final tokens for min`, minOccurTotal)
 
-	if multithreaded {
-		tokens.Build_With_Min_Multithreaded(minOccurTotal)
-	} else {
-		tokens.Build_With_Min(minOccurTotal)
+	// Sort and filter the final list
+	switch {
+		case onlyLatin && onlyValid:
+			if multithreaded {
+				tokens.Build_With_Min_Filter_Multithreaded(minOccurTotal, isValidLatin)
+			} else {
+				tokens.Build_With_Min_Filter(minOccurTotal, isValidLatin)
+			}
+		case onlyLatin:
+			if multithreaded {
+				tokens.Build_With_Min_Filter_Multithreaded(minOccurTotal, isLatin)
+			} else {
+				tokens.Build_With_Min_Filter(minOccurTotal, isLatin)
+			}
+		case onlyValid:
+			if multithreaded {
+				tokens.Build_With_Min_Filter_Multithreaded(minOccurTotal, isValid)
+			} else {
+				tokens.Build_With_Min_Filter(minOccurTotal, isValid)
+			}
+		default:
+			if multithreaded {
+				tokens.Build_With_Min_Multithreaded(minOccurTotal)
+			} else {
+				tokens.Build_With_Min(minOccurTotal)
+			}
+	}
+
+	// Unless strict mode, add code-related tokens that would otherwise be denied
+	// This in no way harms datasets that don't contain any code, they'll just be immediately pruned during training
+	if level < 4 {
+		for _, v := range extraTokens {
+			tokens.Add(normalize([]byte(v)), 1)
+			tokens.Add(normalize([]byte(" " + string(v))), 1)
+			if v[len(v)-1] == '/' {
+				tokens.Add([]byte(string(v) + "D"), 1)
+			}
+		}
+		if multithreaded {
+			tokens.Build_Multithreaded()
+		} else {
+			tokens.Build()
+		}
 	}
 
 	// Use the charTable to count the total tokens counted
-	// It's exactly the number of single characters counted, times the token length (the tail of each chunk is skipped for efficiency)
+	// It's exactly the number of single characters counted, multiplied by the token length (the tail of each chunk is skipped for efficiency)
 	var total int
 	for i:=0; i<256; i++ {
 		total += charTable[i]
@@ -1789,8 +1907,207 @@ func main() {
 	log.Println(`Filtered`, formatInt(total), `tokens in`, time.Now().Sub(startTime).Round(time.Millisecond))
 	
 	log.Println(`Saving tokens...`)
-	if err = saveTokensToFile(saveFilename, tokens, level); err != nil {
+	if err = saveTokensToFile(saveFilename, tokens); err != nil {
 		panic(err)
 	}
 	log.Println(`Saved:`, saveFilename)
 }
+
+// ------------------------------------------------------
+
+var delimiters = map[rune]bool{
+	'(': true, ')': true, '[': true, ']': true, '{': true, '}': true, '\'': true, 
+    '"': true, '‘': true, '’': true, '“': true, '”': true, '«': true, '»': true, 
+    '‹': true, '›': true, '‛': true, '`': true, '„': true, '″': true, '〝': true, 
+    '〞': true, '「': true, '」': true, '『': true, '』': true, '｢': true, '｣': true, 
+    '〈': true, '〉': true, '《': true, '》': true, '‟': true, '❛': true, '❜': true, 
+    '❝': true, '❞': true, '❮': true, '❯': true, '〔': true, '〕': true, '⸨': true, '⸩': true,
+}
+
+var delimiters2 = map[rune]bool{
+	'<': true, '>': true,
+	'(': true, ')': true, '[': true, ']': true, '{': true, '}': true, '\'': true, 
+    '"': true, '‘': true, '’': true, '“': true, '”': true, '«': true, '»': true, 
+    '‹': true, '›': true, '‛': true, '`': true, '„': true, '″': true, '〝': true, 
+    '〞': true, '「': true, '」': true, '『': true, '』': true, '｢': true, '｣': true, 
+    '〈': true, '〉': true, '《': true, '》': true, '‟': true, '❛': true, '❜': true, 
+    '❝': true, '❞': true, '❮': true, '❯': true, '〔': true, '〕': true, '⸨': true, '⸩': true,
+}
+
+var extraTokens = []string{
+	`#define`, `#elif`, `#else`, `#endif`, `#error`, `#if`, `#ifdef`, `#ifndef`, `#include`, `#line`, 
+	`#pragma`, `#undef`, `$GLOBALS`, `$HTTP_RAW_POST_DATA`, `$_COOKIE`, `$_ENV`, `$_FILES`, `$_GET`, `$_POST`, `$_REQUEST`, 
+	`$_SERVER`, `$_SESSION`, `$argc`, `$argv`, `$http_response_header`, `$this`, `&#10;`, `&#123;`, `&#124;`, `&#125;`, 
+	`&#160;`, `&#161;`, `&#162;`, `&#163;`, `&#164;`, `&#165;`, `&#166;`, `&#167;`, `&#168;`, `&#169;`, 
+	`&#170;`, `&#171;`, `&#172;`, `&#173;`, `&#174;`, `&#175;`, `&#176;`, `&#177;`, `&#178;`, `&#179;`, 
+	`&#180;`, `&#181;`, `&#182;`, `&#183;`, `&#184;`, `&#185;`, `&#186;`, `&#187;`, `&#188;`, `&#189;`, 
+	`&#190;`, `&#191;`, `&#192;`, `&#193;`, `&#194;`, `&#195;`, `&#196;`, `&#197;`, `&#198;`, `&#199;`, 
+	`&#200;`, `&#201;`, `&#202;`, `&#203;`, `&#204;`, `&#205;`, `&#206;`, `&#207;`, `&#208;`, `&#209;`, 
+	`&#210;`, `&#211;`, `&#212;`, `&#213;`, `&#214;`, `&#215;`, `&#216;`, `&#217;`, `&#218;`, `&#219;`, 
+	`&#220;`, `&#221;`, `&#222;`, `&#223;`, `&#224;`, `&#225;`, `&#226;`, `&#227;`, `&#228;`, `&#229;`, 
+	`&#230;`, `&#231;`, `&#232;`, `&#233;`, `&#234;`, `&#235;`, `&#236;`, `&#237;`, `&#238;`, `&#239;`, 
+	`&#240;`, `&#241;`, `&#242;`, `&#243;`, `&#244;`, `&#245;`, `&#246;`, `&#247;`, `&#248;`, `&#249;`, 
+	`&#250;`, `&#251;`, `&#252;`, `&#253;`, `&#254;`, `&#255;`, `&#256;`, `&#257;`, `&#258;`, `&#259;`, 
+	`&#260;`, `&#261;`, `&#262;`, `&#263;`, `&#264;`, `&#265;`, `&#266;`, `&#267;`, `&#268;`, `&#269;`, 
+	`&#270;`, `&#271;`, `&#272;`, `&#273;`, `&#274;`, `&#275;`, `&#276;`, `&#277;`, `&#278;`, `&#279;`, 
+	`&#280;`, `&#281;`, `&#284;`, `&#285;`, `&#286;`, `&#287;`, `&#288;`, `&#289;`, `&#290;`, `&#291;`, 
+	`&#292;`, `&#293;`, `&#294;`, `&#295;`, `&#296;`, `&#297;`, `&#298;`, `&#299;`, `&#300;`, `&#301;`, 
+	`&#302;`, `&#303;`, `&#304;`, `&#305;`, `&#306;`, `&#307;`, `&#308;`, `&#309`, `&#309;`, `&#310;`, 
+	`&#311;`, `&#321;`, `&#322;`, `&#336;`, `&#337;`, `&#33;`, `&#342;`, `&#343;`, `&#346;`, `&#347;`, 
+	`&#34;`, `&#350;`, `&#351;`, `&#354;`, `&#355;`, `&#35;`, `&#360;`, `&#361;`, `&#368;`, `&#369;`, 
+	`&#36;`, `&#372;`, `&#373;`, `&#374;`, `&#375;`, `&#37;`, `&#38;`, `&#39;`, `&#40;`, `&#41;`, 
+	`&#42;`, `&#43;`, `&#44;`, `&#46;`, `&#47;`, `&#58;`, `&#59;`, `&#60;`, `&#61;`, `&#62;`, 
+	`&#63;`, `&#64;`, `&#7922;`, `&#7923;`, `&#91;`, `&#92;`, `&#93;`, `&#94;`, `&#95;`, `&#96;`, 
+	`&#9;`, `&AElig;`, `&AMP;`, `&Aacute;`, `&Abreve;`, `&Acirc;`, `&Agrave;`, `&Amacr;`, `&Aogon;`, `&Aring;`, 
+	`&Atilde;`, `&Auml;`, `&COPY;`, `&Cacute;`, `&Ccaron;`, `&Ccedil;`, `&Ccirc;`, `&Cdot;`, `&Dcaron;`, `&Dogon;`, 
+	`&Dot;`, `&Dstrok;`, `&ETH;`, `&Eacute;`, `&Ebreve;`, `&Ecaron;`, `&Ecirc;`, `&Egrave;`, `&Emacr;`, `&Eogon;`, 
+	`&Etilde;`, `&Euml;`, `&GT;`, `&Gbreve;`, `&Gcedil;`, `&Gcirc;`, `&Gdot;`, `&Gogon;`, `&Hat;`, `&Hcirc;`, 
+	`&Hstrok;`, `&IJlig;`, `&Iacute;`, `&Ibreve;`, `&Icirc;`, `&Idot;`, `&Igrave;`, `&Imacr;`, `&Iogon;`, `&Itilde;`, 
+	`&Iuml;`, `&Jcirc;`, `&Kcedil;`, `&LCub;`, `&LT;`, `&Lstrok;`, `&Mcirc;`, `&Mdot;`, `&NewLine;`, `&Ntilde;`, 
+	`&Oacute;`, `&Obreve;`, `&Ocirc;`, `&Odblac;`, `&Ograve;`, `&Oslash;`, `&Otilde;`, `&Ouml;`, `&QUOT;`, `&RCub;`, 
+	`&REG;`, `&Rcedil;`, `&Sacute;`, `&Scedil;`, `&THORN;`, `&Tab;`, `&Tcedil;`, `&Uacute;`, `&Ucirc;`, `&Udblac;`, 
+	`&Ugrave;`, `&Utilde;`, `&Uuml;`, `&VerticalLine;`, `&Wcirc;`, `&Yacute;`, `&Ycirc;`, `&Ytilde;`, `&aacute;`, `&abreve;`, 
+	`&acirc;`, `&acute;`, `&aelig;`, `&agrave;`, `&amacr;`, `&amp;`, `&aogon;`, `&apos;`, `&aring;`, `&ast;`, 
+	`&atilde;`, `&auml;`, `&brvbar;`, `&bsol;`, `&cacute;`, `&ccaron;`, `&ccedil;`, `&ccirc;`, `&cdot;`, `&cedil;`, 
+	`&cent;`, `&circledR;`, `&colon;`, `&comma;`, `&commat;`, `&copy;`, `&curren;`, `&dcaron;`, `&deg;`, `&die;`, 
+	`&divide;`, `&dollar;`, `&dot;`, `&dstrok;`, `&eacute;`, `&ebreve;`, `&ecaron;`, `&ecirc;`, `&egrave;`, `&emacr;`, 
+	`&eogon;`, `&equals;`, `&eth;`, `&etilde;`, `&euml;`, `&excl;`, `&frac12;`, `&frac14;`, `&frac34;`, `&gbreve;`, 
+	`&gcirc;`, `&gdot;`, `&grave;`, `&gt;`, `&hcirc;`, `&hstrok;`, `&iacute;`, `&ibreve;`, `&icirc;`, `&iexcl;`, 
+	`&igrave;`, `&ijlig;`, `&imacr;`, `&imath;`, `&inodot;`, `&iogon;`, `&iquest;`, `&itilde;`, `&iuml;`, `&jcirc;`, 
+	`&kcedil;`, `&laquo;`, `&lbrace;`, `&lbrack;`, `&lowbar;`, `&lpar;`, `&lsqb;`, `&lstrok;`, `&lt;`, `&macr;`, 
+	`&mcirc;`, `&mdot;`, `&micro;`, `&middot;`, `&nbsp;`, `&not;`, `&ntilde;`, `&num;`, `&oacute;`, `&obreve;`, 
+	`&ocirc;`, `&odblac;`, `&ograve;`, `&ordf;`, `&ordm;`, `&oslash;`, `&otilde;`, `&ouml;`, `&para;`, `&percnt;`, 
+	`&period;`, `&plus;`, `&plusmn;`, `&pound;`, `&quest;`, `&quot;`, `&raquo;`, `&rbrace;`, `&rbrack;`, `&rcedil;`, 
+	`&reg;`, `&rpar;`, `&rsqb;`, `&sacute;`, `&scedil;`, `&sect;`, `&semi;`, `&shy;`, `&sol;`, `&sup1;`, 
+	`&sup2;`, `&sup3;`, `&szlig;`, `&tcedil;`, `&thorn;`, `&times;`, `&uacute;`, `&ucirc;`, `&udblac;`, `&ugrave;`, 
+	`&uml;`, `&utilde;`, `&uuml;`, `&vert;`, `&wcirc;`, `&yacute;`, `&ycirc;`, `&yen;`, `&ytilde;`, `&yuml;`, 
+	`(const T& arg)`, `--%>`, `-->`, `.h>`, `<!--#`, `<!--`, `<!--#include -->`, `<!---->`, `<!--[if IE ]>`, `<!DOCTYPE>`, `<![endif]-->`, 
+	`<%--`, `</A>`, `</ABBR>`, `</ACRONYM>`, `</ADDRESS>`, `</ANNOTATION>`, `</APP>`, `</APPINFO>`, `</APPLET>`, `</AREA>`, 
+	`</ARTICLE>`, `</ASIDE>`, `</AUDIO>`, `</B>`, `</BASE>`, `</BASEFONT>`, `</BDI>`, `</BDO>`, `</BGSOUND>`, `</BIG>`, 
+	`</BINDING>`, `</BLINK>`, `</BLOCKQUOTE>`, `</BODY>`, `</BR>`, `</BUTTON>`, `</CANVAS>`, `</CAPTION>`, `</CENTER>`, `</CITE>`, 
+	`</CODE>`, `</COL>`, `</COLGROUP>`, `</COMMAND>`, `</COMMENT>`, `</CONTAINER>`, `</CONTENT>`, `</DATA>`, `</DATALIST>`, `</DD>`, 
+	`</DECORATOR>`, `</DEL>`, `</DETAILS>`, `</DFN>`, `</DIALOG>`, `</DIR>`, `</DIV>`, `</DL>`, `</DOCUMENTATION>`, `</DT>`, 
+	`</ELEMENT>`, `</EM>`, `</EMBED>`, `</FETCH>`, `</FIELDSET>`, `</FIGCAPTION>`, `</FIGURE><FOOTER>`, `</FIGURECAPTION>`, `</FONT>`, `</FOOTER>`, 
+	`</FORM>`, `</FRAME>`, `</FRAMESET>`, `</H1><H2>`, `</H2>`, `</H3>`, `</H4>`, `</H5>`, `</H6>`, `</HEAD>`, 
+	`</HEADER>`, `</HGROUP>`, `</HR>`, `</HTML>`, `</I>`, `</IFRAME>`, `</ILAYER>`, `</IMAGE>`, `</IMG>`, `</IMPORT>`, 
+	`</INCLUDE>`, `</INPUT>`, `</INS>`, `</ISINDEX>`, `</KBD>`, `</KEYGEN>`, `</LABEL>`, `</LAYER>`, `</LEGEND>`, `</LI>`, 
+	`</LINK>`, `</LISTING>`, `</MAIN>`, `</MAP>`, `</MARK>`, `</MARQUEE>`, `</MENU>`, `</META>`, `</METER>`, `</MIXIN>`, 
+	`</MULTICOL>`, `</NAV>`, `</NEXTID>`, `</NOEMBED>`, `</NOFRAMES>`, `</NOINDEX>`, `</NOLAYER>`, `</NOSCRIPT>`, `</NXTID>`, `</OBJECT>`, 
+	`</OL>`, `</OPTGROUP>`, `</OPTION>`, `</OUTPUT>`, `</P>`, `</PARAM>`, `</PICTURE>`, `</PLAINTEXT>`, `</PRE>`, `</PROCESS>`, 
+	`</PROGRESS>`, `</Q>`, `</REDEFINE>`, `</REPEATER>`, `</RP>`, `</RT>`, `</RUBY>`, `</React.Fragment>`, `</S>`, `</SAMP>`, 
+	`</SCRIPT>`, `</SECTION>`, `</SELECT>`, `</SERVER>`, `</SERVICE>`, `</SHADOW>`, `</SIMPLETYPE>`, `</SMALL>`, `</SOUND>`, `</SOURCE>`, 
+	`</SPACER>`, `</SPAN>`, `</SPOT>`, `</STRIKE>`, `</STRONG>`, `</STYLE>`, `</SUB>`, `</SUMMARY>`, `</SUP>`, `</TABLE>`, 
+	`</TBODY>`, `</TD>`, `</TEMPLATE>`, `</TEXTAREA>`, `</TFOOT>`, `</TH>`, `</THEAD>`, `</TIME><TITLE>`, `</TITLE></TR>`, `</TRACK>`, 
+	`</U>`, `</UL>`, `</UNION>`, `</VAR>`, `</VIDEO>`, `</WBR>`, `</XMP>`, `</XTAGS>`, `</a>`, `</abbr>`, 
+	`</acronym>`, `</address>`, `</annotation>`, `</app>`, `</appinfo>`, `</applet>`, `</area>`, `</article>`, `</aside>`, `</audio>`, 
+	`</b>`, `</base>`, `</basefont>`, `</bdi>`, `</bdo>`, `</bgsound>`, `</big>`, `</binding>`, `</blink>`, `</blockquote>`, 
+	`</body>`, `</br>`, `</button>`, `</canvas>`, `</caption>`, `</center>`, `</cite>`, `</code>`, `</col>`, `</colgroup>`, 
+	`</command>`, `</comment>`, `</container>`, `</content>`, `</data>`, `</datalist>`, `</dd>`, `</decorator>`, `</del>`, `</details>`, 
+	`</dfn>`, `</dialog>`, `</dir>`, `</div>`, `</dl>`, `</documentation>`, `</dt>`, `</element>`, `</em>`, `</embed>`, 
+	`</fetch>`, `</fieldset>`, `</figcaption>`, `</figure><footer>`, `</figurecaption>`, `</font>`, `</footer>`, `</form>`, `</frame>`, `</frameset>`, 
+	`</h1>`, `</h2>`, `</h3>`, `</h4>`, `</h5>`, `</h6>`, `</head>`, `</header>`, `</hgroup>`, `</hr>`, 
+	`</html>`, `</i>`, `</iframe>`, `</ilayer>`, `</image>`, `</img>`, `</import>`, `</include>`, `</input>`, `</ins>`, 
+	`</isindex>`, `</kbd>`, `</keygen>`, `</label>`, `</layer>`, `</legend>`, `</li>`, `</link>`, `</listing>`, `</main>`, 
+	`</map>`, `</mark>`, `</marquee>`, `</menu>`, `</menuitem>`, `</meta>`, `</meter>`, `</mixin>`, `</multicol>`, `</nav>`, 
+	`</nextid>`, `</ng-template>`, `</nobr>`, `</noembed>`, `</noframes>`, `</noindex>`, `</nolayer>`, `</noscript>`, `</nxtid>`, `</object>`, 
+	`</ol>`, `</optgroup>`, `</option>`, `</output>`, `</p>`, `</param>`, `</picture>`, `</plaintext>`, `</pre>`, `</process>`, 
+	`</progress>`, `</q>`, `</redefine>`, `</repeater>`, `</rp>`, `</rt>`, `</ruby>`, `</s>`, `</samp>`, `</script>`, 
+	`</section>`, `</select>`, `</server>`, `</service>`, `</shadow>`, `</simpleType>`, `</sound>`, `</source>`, `</spacer>`, `</span>`, 
+	`</spot>`, `</strike>`, `</strong>`, `</style>`, `</sub>`, `</summary>`, `</sup>`, `</table>`, `</tbody>`, `</td>`, 
+	`</template>`, `</textarea>`, `</tfoot>`, `</th>`, `</thead>`, `</time>`, `</title>`, `</tr>`, `</track>`, `</tt>`, 
+	`</u>`, `</ul>`, `</union>`, `</var>`, `</video>`, `</wbr>`, `</xmp>`, `</xtags>`, `<?`, `<?=`, 
+	`<?php`, `<?xml`, `<A>`, `<ABBR>`, `<ACRONYM>`, `<ADDRESS>`, `<ANNOTATION>`, `<APP>`, `<APPINFO>`, `<APPLET>`, 
+	`<AREA />`, `<AREA/>`, `<AREA>`, `<ARTICLE>`, `<ASIDE>`, `<AUDIO>`, `<B>`, `<BASE />`, `<BASE/>`, `<BASE>`, 
+	`<BASEFONT>`, `<BDI>`, `<BDO>`, `<BGSOUND>`, `<BIG>`, `<BINDING>`, `<BLINK>`, `<BLOCKQUOTE>`, `<BODY>`, `<BR />`, 
+	`<BR/>`, `<BR>`, `<BUTTON>`, `<CANVAS>`, `<CAPTION>`, `<CENTER>`, `<CITE>`, `<CODE>`, `<COL />`, `<COL/>`, 
+	`<COL>`, `<COLGROUP>`, `<COMMAND>`, `<COMMENT>`, `<CONTAINER>`, `<CONTENT>`, `<DATA>`, `<DATALIST>`, `<DD>`, `<DECORATOR>`, 
+	`<DEL>`, `<DETAILS>`, `<DFN>`, `<DIALOG>`, `<DIR>`, `<DIV>`, `<DL>`, `<DOCUMENTATION>`, `<DT>`, `<ELEMENT>`, 
+	`<EM>`, `<EMBED />`, `<EMBED/>`, `<EMBED>`, `<FETCH>`, `<FIELDSET>`, `<FIGCAPTION>`, `<FIGURE>`, `<FIGURECAPTION>`, `<FONT>`, 
+	`<FORM>`, `<FRAME>`, `<FRAMESET>`, `<H1>`, `<H3>`, `<H4>`, `<H5>`, `<H6>`, `<HEAD>`, `<HEADER>`, 
+	`<HGROUP>`, `<HR />`, `<HR/>`, `<HR>`, `<HTML>`, `<I>`, `<IFRAME>`, `<ILAYER>`, `<IMAGE>`, `<IMG />`, 
+	`<IMG/>`, `<IMG>`, `<IMPORT>`, `<INCLUDE>`, `<INPUT />`, `<INPUT/>`, `<INPUT>`, `<INS>`, `<ISINDEX>`, `<KBD>`, 
+	`<KEYGEN />`, `<KEYGEN/>`, `<KEYGEN>`, `<LABEL>`, `<LAYER>`, `<LEGEND>`, `<LI>`, `<LINK />`, `<LINK/>`, `<LINK>`, 
+	`<LISTING>`, `<MAIN>`, `<MAP>`, `<MARK>`, `<MARQUEE>`, `<MENU>`, `<META />`, `<META/>`, `<META>`, `<METER>`, 
+	`<MIXIN>`, `<MULTICOL>`, `<NAV>`, `<NEXTID>`, `<NOEMBED>`, `<NOFRAMES>`, `<NOINDEX>`, `<NOLAYER>`, `<NOSCRIPT>`, `<NXTID>`, 
+	`<OBJECT>`, `<OL>`, `<OPTGROUP>`, `<OPTION>`, `<OUTPUT>`, `<P>`, `<PARAM />`, `<PARAM/>`, `<PARAM>`, `<PICTURE>`, 
+	`<PLAINTEXT>`, `<PRE>`, `<PROCESS>`, `<PROGRESS>`, `<Q>`, `<REDEFINE>`, `<REPEATER>`, `<RP>`, `<RT>`, `<RUBY>`, 
+	`<React.Fragment>`, `<S>`, `<SAMP>`, `<SCRIPT>`, `<SECTION>`, `<SELECT>`, `<SERVER>`, `<SERVICE>`, `<SHADOW>`, `<SIMPLETYPE>`, 
+	`<SMALL>`, `<SOUND>`, `<SOURCE />`, `<SOURCE/>`, `<SOURCE>`, `<SPACER>`, `<SPAN>`, `<SPOT>`, `<STRIKE>`, `<STRONG>`, 
+	`<STYLE>`, `<SUB>`, `<SUMMARY>`, `<SUP>`, `<TABLE>`, `<TBODY>`, `<TD>`, `<TEMPLATE>`, `<TEXTAREA>`, `<TFOOT>`, 
+	`<TH>`, `<THEAD>`, `<TIME>`, `<TR>`, `<TRACK />`, `<TRACK/>`, `<TRACK>`, `<U>`, `<UL>`, `<UNION>`, 
+	`<VAR>`, `<VIDEO>`, `<WBR />`, `<WBR/>`, `<WBR>`, `<XMP>`, `<XTAGS>`, `<a>`, `<abbr>`, `<acronym>`, 
+	`<address>`, `<algorithm>`, `<annotation>`, `<app>`, `<appinfo>`, `<applet>`, `<area />`, `<area/>`, `<area>`, `<array>`, 
+	`<article>`, `<aside>`, `<assert.h>`, `<atomic>`, `<audio>`, `<b>`, `<base />`, `<base/>`, `<base>`, `<basefont>`, 
+	`<baseurl>`, `<bdi>`, `<bdo>`, `<bgsound>`, `<big>`, `<binding>`, `<bitset>`, `<blink>`, `<blockquote>`, `<body>`, 
+	`<br />`, `<br/>`, `<br>`, `<button>`, `<canvas>`, `<caption>`, `<cassert>`, `<ccomplex>`, `<cctype>`, `<center>`, 
+	`<cfloat>`, `<chrono>`, `<cinttypes>`, `<ciso646>`, `<cite>`, `<climits>`, `<clocale>`, `<cmath>`, `<code>`, `<codecvt>`, 
+	`<col />`, `<col/>`, `<col>`, `<colgroup>`, `<command>`, `<comment>`, `<complex>`, `<condition_variable>`, `<container>`, `<content>`, 
+	`<csetjmp>`, `<csignal>`, `<cstdarg>`, `<cstdbool>`, `<cstddef>`, `<cstdint>`, `<cstdio>`, `<cstdlib>`, `<cstring>`, `<ctime>`, 
+	`<ctype.h>`, `<cwchar>`, `<cwctype>`, `<data>`, `<datalist>`, `<dd>`, `<decorator>`, `<del>`, `<deque>`, `<details>`, 
+	`<dfn>`, `<dialog>`, `<dir>`, `<div>`, `<dl>`, `<documentation>`, `<dom-module>`, `<dt>`, `<element>`, `<em>`, 
+	`<embed />`, `<embed/>`, `<embed>`, `<errno.h>`, `<exception>`, `<fetch>`, `<field>`, `<fieldset>`, `<figcaption>`, `<figure>`, 
+	`<figurecaption>`, `<filesystem>`, `<font>`, `<form>`, `<frame>`, `<frameset>`, `<fstream>`, `<functional>`, `<future>`, `<h1>`, 
+	`<h2>`, `<h3>`, `<h4>`, `<h5>`, `<h6>`, `<head>`, `<header>`, `<hgroup>`, `<hr />`, `<hr/>`, 
+	`<hr>`, `<html>`, `<i>`, `<iframe>`, `<ilayer>`, `<image>`, `<img />`, `<img/>`, `<img>`, `<import>`, 
+	`<include>`, `<initializer_list>`, `<input />`, `<input/>`, `<input>`, `<ins>`, `<iomanip>`, `<ios>`, `<iostream>`, `<isindex>`, 
+	`<iterator>`, `<kbd>`, `<keygen />`, `<keygen/>`, `<keygen>`, `<label>`, `<layer>`, `<legend>`, `<li>`, `<limits.h>`, 
+	`<link />`, `<link/>`, `<link>`, `<list>`, `<listing>`, `<locale.h>`, `<locale>`, `<main>`, `<map>`, `<mark>`, 
+	`<marquee>`, `<math.h>`, `<menu>`, `<menuitem>`, `<meta />`, `<meta/>`, `<meta>`, `<meter>`, `<mixin>`, `<multicol>`, 
+	`<mutex>`, `<nav>`, `<nextid>`, `<ng-template>`, `<nobr>`, `<noembed>`, `<noframes>`, `<noindex>`, `<nolayer>`, `<noscript>`, 
+	`<numeric>`, `<nxtid>`, `<object>`, `<ol>`, `<optgroup>`, `<option>`, `<output>`, `<p>`, `<param />`, `<param/>`, 
+	`<param>`, `<picture>`, `<plaintext>`, `<pre>`, `<process>`, `<progress>`, `<q>`, `<queue>`, `<random>`, `<ratio>`, 
+	`<redefine>`, `<regex>`, `<repeater>`, `<rp>`, `<rt>`, `<ruby>`, `<s>`, `<samp>`, `<script>`, `<section>`, 
+	`<select>`, `<server>`, `<service>`, `<set>`, `<setjmp.h>`, `<shadow>`, `<signal.h>`, `<simpleType>`, `<small></small>`, `<sound>`, 
+	`<source />`, `<source/>`, `<source>`, `<spacer>`, `<span>`, `<spot>`, `<sstream>`, `<stack>`, `<stdarg.h>`, `<stddef.h>`, 
+	`<stdexcept>`, `<stdint.h>`, `<stdio.h>`, `<stdlib.h>`, `<streambuf>`, `<strike>`, `<string.h>`, `<string>`, `<strong>`, `<style>`, 
+	`<sub>`, `<summary>`, `<sup>`, `<table>`, `<tbody>`, `<td>`, `<template>`, `<textarea>`, `<tfoot>`, `<th>`, 
+	`<thead>`, `<thread>`, `<time.h>`, `<time>`, `<title>`, `<tr>`, `<track />`, `<track/>`, `<track>`, `<tt>`, 
+	`<tuple>`, `<typeinfo>`, `<typename T>`, `<u>`, `<ul>`, `<union>`, `<utility>`, `<valarray>`, `<var>`, `<vector>`, 
+	`<video>`, `<wbr />`, `<wbr/>`, `<wbr>`, `<wchar.h>`, `<wctype.h>`, `<xf:case>`, `<xf:group>`, `<xf:input>`, `<xf:instance>`, 
+	`<xf:model>`, `<xf:namespace>`, `<xf:output>`, `<xf:repeat>`, `<xf:submission>`, `<xf:switch>`, `<xf:trigger>`, `<xmp><xtags>`, `=begin `, `=end`, 
+	`?>`, `Array.isArray`, `Array.prototype`, `Console.WriteLine`, `Dir.glob`, `DispatchQueue.main.async`, `File.open`, `File.read`, `JSON.parse`, `JSON.stringify`, 
+	`Kernel.rand`, `Object()`, `Object.keys`, `System.Collections.`, `System.Collections.Generic.`, `System.Collections.Generic.Dictionary`, `System.Collections.Generic.List`, `System.Data.DataSet`, `System.Data.SqlClient.SqlConnection`, `System.IO.File`, 
+	`System.Linq.Enumerable.Range`, `System.Net.Http.HttpClient`, `System.Net.WebClient`, `System.Text.RegularExpressions.Regex`, `System.Text.StringBuilder`, `System.Threading.Thread.Sleep`, `System.Xml.XmlDocument`, `System.out.println`, `Time.now`, `[DEFINE]`, 
+	`[ELIF]`, `[ENDIF]`, `[ERROR]`, `[IFNOT]`, `[IF]`, `[INCLUDE]`, `[LINE]`, `[PRAGMA]`, `[UNDEF]`, `__add__()`, 
+	`__construct`, `__construct()`, `__dirname`, `__eq__()`, `__file__`, `__filename`, `__init__`, `__init__()`, `__len__`, `__len__()`, 
+	`__main__`, `__name__`, `__str__()`, `boost::`, `bufio.NewScanner`, `console.error`, `console.log`, `console.warn`, `constructor()`, `date_default_timezone_set`, 
+	`date_time`, `document.createAttribute`, `document.createComment`, `document.createDocumentFragment`, `document.createElement`, `document.createTextNode`, `document.getElementById`, `document.getElementsByClassName`, `document.getElementsByName`, `document.getElementsByTagName`, 
+	`document.querySelector`, `document.querySelectorAll`, `fmt.Printf`, `fmt.Println`, `gc_collect_cycles()`, `gc_disable()`, `gc_enable()`, `gc_enabled()`, `getenv()`, `getopt()`, 
+	`http.Get`, `http.Post`, `io.Reader`, `io.Writer`, `java.io.File`, `java.lang.String`, `java.net.Socket`, `java.sql.Connection`, `java.util.ArrayList`, `java.util.Calendar`, 
+	`java.util.Date`, `java.util.Enumeration`, `java.util.GregorianCalendar`, `java.util.HashMap`, `java.util.Iterator`, `java.util.List`, `java.util.Locale`, `java.util.Map`, `java.util.Observable`, `java.util.Observer`, 
+	`java.util.Properties`, `java.util.ResourceBundle`, `java.util.Scanner`, `java.util.Set`, `java.util.SimpleTimeZone`, `java.util.TimeZone`, `json.Marshal`, `json.Unmarshal`, `main()`, `math.Sqrt`, 
+	`math.sqrt`, `matplotlib.pyplot.plot`, `memory_get_peak_usage()`, `memory_get_usage()`, `module.exports`, `new Date`, `new Promise`, `numpy.array`, `os.Create`, `os.Open`, 
+	`os.Remove`, `os.chdir`, `os.environ`, `os.getcwd`, `os.listdir`, `os.mkdir`, `os.path`, `os.path.`, `os.path.exists`, `os.path.getatime`, 
+	`os.path.getctime`, `os.path.getmtime`, `os.path.getsize`, `os.path.isdir`, `os.path.isfile`, `os.path.join`, `os.path.split`, `os.path.splitext`, `os.popen`, `os.rename`, 
+	`os.rmdir`, `os.startfile`, `os.system`, `os.walk`, `pandas.DataFrame`, `parent::__construct`, `print`, `printf`, `printf()`, `process.env`, 
+	`process.exit`, `putenv()`, `require_once`, `scanf()`, `smart_ptr`, `sort.Ints`, `sort.Strings`, `sql.Open`, `sql.Query`, `std::`, 
+	`std::accumulate`, `std::acos`, `std::acosh`, `std::adjacent_difference`, `std::adjacent_find`, `std::advance`, `std::array`, `std::asin`, `std::asinh`, `std::async`, 
+	`std::atan`, `std::atan2`, `std::atanh`, `std::atomic`, `std::atomic_`, `std::atomic_bool`, `std::atomic_char`, `std::atomic_double`, `std::atomic_flag`, `std::atomic_float`, 
+	`std::atomic_int`, `std::atomic_int16_t`, `std::atomic_int32_t`, `std::atomic_int64_t`, `std::atomic_int8_t`, `std::atomic_int_fast16_t`, `std::atomic_int_fast32_t`, `std::atomic_int_fast64_t`, `std::atomic_int_fast8_t`, `std::atomic_int_least16_t`, 
+	`std::atomic_int_least32_t`, `std::atomic_int_least64_t`, `std::atomic_int_least8_t`, `std::atomic_intmax_t`, `std::atomic_intptr_t`, `std::atomic_long`, `std::atomic_ptrdiff_t`, `std::atomic_schar`, `std::atomic_short`, `std::atomic_size_t`, 
+	`std::atomic_uchar`, `std::atomic_uint`, `std::atomic_uint16_t`, `std::atomic_uint32_t`, `std::atomic_uint64_t`, `std::atomic_uint8_t`, `std::atomic_uint_fast16_t`, `std::atomic_uint_fast32_t`, `std::atomic_uint_fast64_t`, `std::atomic_uint_fast8_t`, 
+	`std::atomic_uint_least16_t`, `std::atomic_uint_least32_t`, `std::atomic_uint_least64_t`, `std::atomic_uint_least8_t`, `std::atomic_uintmax_t`, `std::atomic_uintptr_t`, `std::atomic_ulong`, `std::atomic_ushort`, `std::atomic_wchar_t`, `std::bad_function_call`, 
+	`std::bad_future`, `std::bad_promise`, `std::begin`, `std::binary_search`, `std::bitset`, `std::cbegin`, `std::cbrt`, `std::ceil`, `std::cend`, `std::chrono::duration`, 
+	`std::chrono::high_resolution_clock`, `std::chrono::hours`, `std::chrono::microseconds`, `std::chrono::milliseconds`, `std::chrono::minutes`, `std::chrono::nanoseconds`, `std::chrono::seconds`, `std::chrono::steady_clock`, `std::chrono::system_clock`, `std::chrono::time_point`, 
+	`std::cin`, `std::cin.ignore`, `std::cin.peek`, `std::clamp`, `std::condition_variable`, `std::copy`, `std::copy_backward`, `std::copy_if`, `std::copy_n`, `std::cos`, 
+	`std::cosh`, `std::cout`, `std::cout.put`, `std::crbegin`, `std::crend`, `std::current_exception`, `std::defaultfloat`, `std::deque`, `std::distance`, `std::end`, 
+	`std::endl`, `std::equal_range`, `std::erf`, `std::erfc`, `std::exception_ptr`, `std::exchange`, `std::exp`, `std::exp2`, `std::expm1`, `std::fill`, 
+	`std::fill_n`, `std::find`, `std::find_end`, `std::find_first_of`, `std::find_if`, `std::find_if_not`, `std::fixed`, `std::floor`, `std::forward`, `std::forward_list`, 
+	`std::fstream`, `std::future`, `std::future_error`, `std::gcd`, `std::generate`, `std::generate_n`, `std::hexfloat`, `std::hypot`, `std::ifstream`, `std::includes`, 
+	`std::inner_product`, `std::inplace_merge`, `std::internal`, `std::ios_base::sync_with_stdio`, `std::iota`, `std::is_heap`, `std::is_heap_until`, `std::is_partitioned`, `std::is_sorted`, `std::is_sorted_until`, 
+	`std::istream::get`, `std::launch`, `std::lcm`, `std::left`, `std::lexicographical_compare`, `std::lgamma`, `std::list`, `std::log`, `std::log10`, `std::log1p`, 
+	`std::log2`, `std::lower_bound`, `std::make_exception_ptr`, `std::make_heap`, `std::map`, `std::map<std::string, int>`, `std::max`, `std::max_element`, `std::merge`, `std::min`, 
+	`std::min_element`, `std::minmax_element`, `std::move`, `std::move_backward`, `std::move_if_noexcept`, `std::mutex`, `std::nested_exception`, `std::next`, `std::next_permutation`, `std::nth_element`, 
+	`std::ofstream`, `std::ostream::put`, `std::packaged_task`, `std::pair`, `std::partial_sort`, `std::partial_sort_copy`, `std::partial_sum`, `std::partition`, `std::partition_copy`, `std::partition_point`, 
+	`std::pop_heap`, `std::pow`, `std::prev`, `std::prev_permutation`, `std::priority_queue`, `std::promise`, `std::push_heap`, `std::queue`, `std::random_shuffle`, `std::rbegin`, 
+	`std::recursive_mutex`, `std::remove`, `std::remove_copy`, `std::remove_copy_if`, `std::remove_if`, `std::rend`, `std::replace`, `std::replace_copy`, `std::replace_copy_if`, `std::replace_if`, 
+	`std::resetiosflags`, `std::rethrow_exception`, `std::rethrow_if_nested`, `std::reverse`, `std::reverse_copy`, `std::right`, `std::rotate`, `std::rotate_copy`, `std::scientific`, `std::search`, 
+	`std::search_n`, `std::set`, `std::set_difference`, `std::set_intersection`, `std::set_symmetric_difference`, `std::set_union`, `std::setbase`, `std::setfill`, `std::setiosflags`, `std::setprecision`, 
+	`std::setw`, `std::shared_future`, `std::shared_mutex`, `std::showpos`, `std::shuffle`, `std::sin`, `std::sinh`, `std::sort`, `std::sort_heap`, `std::sqrt`, 
+	`std::stable_partition`, `std::stable_sort`, `std::stack`, `std::stod`, `std::stof`, `std::stoi`, `std::stol`, `std::stold`, `std::stoll`, `std::stoul`, 
+	`std::stoull`, `std::string`, `std::swap`, `std::swap_ranges`, `std::tan`, `std::tanh`, `std::tgamma`, `std::this_thread::sleep_for`, `std::this_thread::sleep_until`, `std::thread`, 
+	`std::throw_with_nested`, `std::to_string`, `std::to_wstring`, `std::tr`, `std::transform`, `std::uncaught_exception`, `std::uncaught_exceptions`, `std::unique`, `std::unique_copy`, `std::unordered_map`, 
+	`std::unordered_multimap`, `std::unordered_multiset`, `std::unordered_set`, `std::upper_bound`, `std::uppercase`, `std::vector`, `std::vector<bool>`, `std::vector<int>`, `strings.Contains`, `strings.Join`, 
+	`strings.Split`, `sync.Mutex`, `sync.WaitGroup`, `sys.argv`, `sys_getloadavg()`, `template`, `template <typename T>`, `time.Now`, `time.Sleep`, `window.addEventListener`, 
+	`window.alert`, `window.clearInterval`, `window.clearTimeout`, `window.close`, `window.confirm`, `window.onload`, `window.open`, `window.prompt`, `window.setInterval`, `window.setTimeout`,
+	`http://`, `https://`, `ftp://`, `.D com`, `.D org`, `.D net`}

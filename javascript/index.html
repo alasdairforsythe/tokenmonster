@@ -211,6 +211,7 @@ h1 {
         let decoder = tokenizer.Decoder()
         let tokenStrDecoded = "";
         let style = "";
+        let reset = false;
 
         for (const tokenId of tokens) {
             // Detokenize each token individually
@@ -229,23 +230,28 @@ h1 {
             }
 
             if (tokenStrDecoded.length > 0) {
+                reset = false;
                 let encodedToken = tokenizer.id2string[tokenId];
                 let tooltipText = `ID: ${tokenId}`;
                 
                 let htmlTokenStr = tokenStrDecoded.replace(/[&<>"'\t\n ]/g, match => {
                     if (match === '\n') {
                         const temp = `</span><br><span class="token token-${tokenCount}" data-tooltip-id="${tooltipText}" data-tooltip-encoded="${encodedToken}"${style}>`;
-                        tokenCount = 0;
+                        reset = true;
                         return temp
                     }
                     return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;', '\t': '<span id="tab"></span>', ' ': '&nbsp;'})[match];
                 });
 
+                
                 outputHTML += `<span class="token token-${tokenCount}" data-tooltip-id="${tooltipText}" data-tooltip-encoded="${encodedToken}"${style}>${htmlTokenStr}</span>`;
-
-                tokenCount++;
-                if (tokenCount == 4) {
-                    tokenCount = 0;
+                if (reset && tokenCount !== 0) {
+                  tokenCount = 0;
+                } else {
+                  tokenCount++;
+                  if (tokenCount === 4) {
+                      tokenCount = 0;
+                  }
                 }
             }
         }
@@ -380,9 +386,7 @@ function addTooltipToTokens() {
       <div class="output-box">
         <div class="select-wrapper">
           <select id="encoder-type-1">
-            <option value="fiction-100256-balanced">fiction-100256-balanced</option>
-            <option value="englishcode-100256-strict">englishcode-100256-strict</option>
-            <option value="englishcode-24000-consistent">englishcode-24000-consistent</option>
+            <option value="test">test</option>
           </select>
           
         </div>
@@ -393,9 +397,7 @@ function addTooltipToTokens() {
       <div class="output-box">
         <div class="select-wrapper">
           <select id="encoder-type-2">
-            <option value="fiction-100256-balanced">fiction-100256-balanced</option>
-            <option value="englishcode-100256-strict">englishcode-100256-strict</option>
-            <option value="englishcode-24000-consistent">englishcode-24000-consistent</option>
+            <option value="test">test</option>
           </select>
         </div>
         <span><input type="checkbox" id="marks-2"><label for="marks-2">show capcode</label></span>

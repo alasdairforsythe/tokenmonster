@@ -1,0 +1,42 @@
+#
+# YAML vocabulary can be used to create a new vocabulary or modify an existing vocabulary.
+# Note that indentation must be done with 2 spaces and not with tabs.
+#
+
+# The following variables only affect a new vocabulary and will not modify an existing one:
+charset: "utf-8"           # has no effect on an existing vocabulary
+capcode: 2                 # has no effect on an existing vocabulary
+normalization: "nfd"       # multiple normalizations can be applied: nfd lowercase accents quotemarks collapse trim leadingspace unixlines
+
+# The following variables will modify an existing vocabulary if present
+include-256-bytes: false
+include-128-bytes: false
+include-utf8-bytes: false
+include-ascii-bytes: false
+include-extended-bytes: false
+exclude-other-bytes: false
+unk: true                  # whether to assigned an ID for an UNK token
+unk-id: 20000              # optionally assign an ID to the UNK token (if exists)
+reset-token-ids: false     # if true, ids will be ignored and assigned from zero alphabetically
+
+# Regular tokens also include single byte tokens
+regular:
+  - token:   "token1"
+    id:      27            # id field is optional
+    score:   0.127         # score field is optional
+    encoded: true          # if false, normalization and capcode will be applied to the token before adding it
+  - token:   "token2"
+  - token:   "TokenMonsterHexEncode{ff}" # you can provide the token hex encoded like this
+
+# Regular tokens cannot contain special tokens, any that do will be ignored/deleted
+special:
+  - token:   "<SPECIAL1>"  # special tokens should not begin with a letter or number
+    id:      1000          # id & score fields are optional
+    score:   0.002
+  - token:   "<SPECIAL2>"
+
+# Tokens specified under "delete" will be deleted
+delete:
+  - token:   " token"      # deletes by token
+    encoded: false         # if false normalization and capcode will be applied before searching for it to delete
+  - id:      77            # deletes by ID

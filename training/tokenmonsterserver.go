@@ -3,14 +3,16 @@ package main
 import (
 	"io"
 	"os"
+	"fmt"
 	"sync"
 	"time"
 	"math"
-	"fmt"
+	"bytes"
 	"os/exec"
 	"syscall"
 	"runtime"
 	"strings"
+	"github.com/AlasdairF/Conv"
 	"github.com/alasdairforsythe/tokenmonster/go"
 )
 
@@ -28,6 +30,8 @@ import (
 		12 = Unable to open vocabulary file
 		13 = Error normalizing text
 		14 = Decoder has not been initialized
+		15 = Invalid job ID
+		16 = YAML is invalid
 
 */
 
@@ -40,6 +44,9 @@ const ( // status codes
 	ERROR_FILE_CANNOT_OPEN = 12
 	ERROR_NORMALIZATION_FAILED = 13
 	ERROR_READ_FAILED = 14
+	ERROR_INVALID_JOB = 15
+	ERROR_YAML_INVALID = 16
+	VERSION = 1
 )
 
 type work struct {
@@ -184,6 +191,10 @@ func main() {
 		1 byte = statusCode (0 is no error)
 		8 bytes = length of payload
 
+	job_type 0
+		Returns VERSION
+			Only responds header with version number
+
 	job_type 1
 		Tokenize
 			4 bytes = number of batches
@@ -228,6 +239,8 @@ func main() {
 
 	job_type 14
 		Change tokenizer
+			1 byte reset token ids
+			1 byte change unk
 			4 bytes number to add, then 1bytelength + each
 			4 bytes number to add special, then 1bytelength + each
 			4 bytes number to delete, then 1bytelength + each
@@ -239,6 +252,7 @@ func main() {
 		Response is:
 			4 bytes number of tokens
 			For each token:
+				4 bytes ID
 				1 byte length raw form
 				1 byte length decoded form
 				1 byte type: 0 = regular, 1 = character, 2 = special
@@ -246,6 +260,24 @@ func main() {
 				Raw form bytes
 				Decoded form bytes
 
+	job_type 16
+		Delete 1 token by ID
+			4 bytes = ID of token to delete
+			Only responds header
+
+	job_type 17
+		Modify vocab by YAML
+			The YAML file
+			Only responds header
+
+	job_type 18
+		New vocab from YAML
+			The YAML file
+			Only responds header with ID
+
+	job_type 19
+		Export YAML from vocab
+			No payload
 
 */
 
@@ -292,7 +324,10 @@ func main() {
 		}
 
 		switch jobType {
-			case 0:
+			case 0: // Get VERSION
+				header9[0] = HEADER_IS_ID
+				writeUint32(header9[1:], VERSION)
+				os.Stdout.Write(header9)
 			
 			case 1: // Tokenize
 				statusCode = HEADER_IS_LENGTH
@@ -523,14 +558,16 @@ func main() {
 					continue
 				}
 				var l uintptr
+				// Read reset tokenIDs
+				var resetTokenIds bool = data[0] == 1
 				// Read "change_unk"
-				switch data[0] {
+				switch data[1] {
 					case 1:
 						vocab.DisableUnkToken()
 					case 2:
 						vocab.EnableUnkToken()
 				}
-				data = data[1:]
+				data = data[2:]
 				// Read "add"
 				var toAdd [][]byte
 				numBatches = readUint32(data)
@@ -569,8 +606,8 @@ func main() {
 				}
 				// Read "resize"
 				resize := int(readUint32(data))
-				vocab := vocab.PrivateGenerateVocab(nil, nil, toAdd, toDelete, toAddSpecial, 0, false, 0, 0, int(resize))
-				vocabs[id] = vocab
+				// Do the modification
+				vocab.PrivateGenerateVocab(nil, nil, nil, toAdd, toDelete, toAddSpecial, nil, 0, ``, 0, 0, 0, resize, resetTokenIds)
 				header9[0] = statusCode
 				writeUint32(header9[1:], uint32(vocab.Len()))
 				os.Stdout.Write(header9)
@@ -590,21 +627,118 @@ func main() {
 				// Get total length
 				length = 4
 				for _, v := range info {
-					length += 7 + uint64(len(v.Token)) + uint64(len(v.TokenDecoded))
+					length += 11 + uint64(len(v.Token)) + uint64(len(v.TokenDecoded))
 				}
 				header13[0] = statusCode
 				writeUint64(header13[1:], length)
 				writeUint32(header13[9:], uint32(len(info)))
 				os.Stdout.Write(header13)
 				for _, v := range info {
-					header8[0] = uint8(len(v.Token))
-					header8[1] = uint8(len(v.TokenDecoded))
-					header8[2] = v.Type
-					writeFloat32(header8[3:], v.Score)
-					os.Stdout.Write(header8[0:7])
+					writeUint32(header12, v.Id)
+					header12[4] = uint8(len(v.Token))
+					header12[5] = uint8(len(v.TokenDecoded))
+					header12[6] = v.Type
+					writeFloat32(header12[7:], v.Score)
+					os.Stdout.Write(header12[0:11])
 					os.Stdout.Write(v.Token)
 					os.Stdout.Write(v.TokenDecoded)
 				}
+
+			case 16: // Delete tokens by ID
+				statusCode = HEADER_IS_ID
+				if id >= uint32(len(vocabs)) {
+					sendError(ERROR_ID_DOES_NOT_EXIST)
+					continue
+				}
+				vocab = vocabs[id]
+				if vocab == nil {
+					sendError(ERROR_ID_IS_UNLOADED)
+					continue
+				}
+				var yml string = "delete:\n"
+				numBatches = readUint32(data)
+				for i=0; i<numBatches; i++ {
+					data = data[4:]
+					yml += "  - id: " + conv.String(int(readUint32(data))) + "\n"
+				}
+				vocab.PrivateGenerateVocab([]byte(yml), nil, nil, nil, nil, nil, nil, 0, ``, 0, 0, 0, 0, false)
+				vocabs[id] = vocab
+				header9[0] = statusCode
+				writeUint32(header9[1:], uint32(vocab.Len()))
+				os.Stdout.Write(header9)
+
+			case 17: // Modify by YAML
+				statusCode = HEADER_IS_ID
+				if id >= uint32(len(vocabs)) {
+					sendError(ERROR_ID_DOES_NOT_EXIST)
+					continue
+				}
+				vocab = vocabs[id]
+				if vocab == nil {
+					sendError(ERROR_ID_IS_UNLOADED)
+					continue
+				}
+				err = vocab.PrivateGenerateVocab(data, nil, nil, nil, nil, nil, nil, 0, ``, 0, 0, 0, 0, false)
+				if err == nil {
+					vocabs[id] = vocab
+				} else {
+					statusCode = ERROR_YAML_INVALID
+				}
+				header9[0] = statusCode
+				writeUint32(header9[1:], uint32(vocab.Len()))
+				os.Stdout.Write(header9)
+
+			case 18: // New Vocab From YAML
+				statusCode = HEADER_IS_LENGTH
+				vocab = new(tokenmonster.Vocab)
+				err = vocab.PrivateGenerateVocab(data, nil, nil, nil, nil, nil, nil, 0, ``, 0, 0, 0, 0, false)
+				if err != nil {
+					header9[0] = ERROR_YAML_INVALID
+					os.Stdout.Write(header9)
+				} else {
+					if len(deletedVocabs) == 0 {
+						id = uint32(len(vocabs))
+						vocabs = append(vocabs, vocab)
+					} else {
+						id = deletedVocabs[len(deletedVocabs) - 1]
+						deletedVocabs = deletedVocabs[0 : len(deletedVocabs) - 1]
+						vocabs[id] = vocab
+					}
+					header9[0] = statusCode
+					writeUint64(header9[1:], 16)
+					os.Stdout.Write(header9)
+					temp := make([]byte, 16)
+					temp[0] = vocab.Capcode()
+					temp[1] = vocab.Charset()
+					temp[2] = vocab.NormalizationCode()
+					temp[3] = vocab.Mode()
+					writeUint32(temp[4:], uint32(vocab.Len()))
+					writeUint32(temp[8:], id)
+					writeUint32(temp[12:], vocab.Unk())
+					os.Stdout.Write(temp)
+				}
+
+			case 19: // Export YAML from vocab
+				statusCode = HEADER_IS_LENGTH
+				if id >= uint32(len(vocabs)) {
+					sendError(ERROR_ID_DOES_NOT_EXIST) // vocab ID does not exist
+					continue
+				}
+				vocab = vocabs[id]
+				if vocab == nil {
+					sendError(ERROR_ID_IS_UNLOADED) // vocab ID already closed
+					continue
+				}
+				w := bytes.NewBuffer(writeBuffer)
+				vocab.ExportYAML(w, data[0] == 1)
+				header9[0] = statusCode
+				writeUint64(header9[1:], uint64(w.Len()))
+				os.Stdout.Write(header9)
+				w.WriteTo(os.Stdout)
+
+			default: // Invalid job type
+				header9[0] = ERROR_INVALID_JOB
+				os.Stdout.Write(header9)
 		}
 
 		os.Stdout.Sync()
