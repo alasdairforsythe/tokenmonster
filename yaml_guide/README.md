@@ -5,5 +5,5 @@ You can import and export any TokenMonster vocabulary to and from YAML format wi
 
 See `example.yaml` for a sample of the TokenMonster YAML vocabulary format.
 
-`convert_gpt2tokenizer.py` is a GPT2 Tokenizer from Hugging Face converted into a TokenMonster vocabulary. It runs faster, tokenizes better, and is a good example
+`convert_gpt2tokenizer.py` converts the GPT2 Tokenizer from Hugging Face into a TokenMonster vocabulary. It runs faster, tokenizes better, and is a good example
 of how to import a vocabulary into TokenMonster format using YAML as an intermediary.
