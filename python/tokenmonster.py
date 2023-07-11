@@ -889,9 +889,9 @@ class Vocab:
             raise RuntimeError("TokenMonster: Invalid encoding length")
     
     def _bytes_to_string(self, input):
-        if self.charset == 1:
+        if self.charset() == "UTF-8":
             return input.decode('utf-8', errors='replace')
-        elif self.charset == 2:
+        elif self.charset() == "UTF-16":
             return input.decode('utf-16-le', errors='replace')
         else:
             return input.decode('latin-1')
