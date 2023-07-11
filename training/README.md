@@ -303,11 +303,11 @@ Usage of ./exportvocab:
   -unk string
         set to true or false to enable or disable the UNK token (optional)
 ```
-
 `-add-single-bytes` & `-add-special-token` allow you to add single-byte or special tokens. If you combine this with `-resize` you can also keep the vocabulary within a target size. For example, to add a special token to an existing vocabulary of size 10000, but not increase the vocabulary size, you could use:
 ```
-./exportvocab -input-vocab myvocab.vocab -add-special-token "<eos>" -resize 10000 -output mynewvocab.vocab
+./exportvocab -input-vocab myvocab.vocab -add-special-token "<eos>" -resize 10000 -output mynewvocab.vocab -reset-token-ids
 ```
+By default, token IDs are fixed, which means that if you resize or delete a token there will be gap in the token IDs. If you don't want this pass `-reset-token-ids`, which will assign new IDs to all the tokens alphabatically, beginning from zero.
 
 `-unk` can be used to enable or disable the UNK token. If enabled, during tokenization, any byte for which there is no token will be covered with the UNK token. If disabled, a byte without a token is skipped. Vocabularies that used `-include-256-bytes` cannot have an UNK token because all bytes already have tokens.
 
