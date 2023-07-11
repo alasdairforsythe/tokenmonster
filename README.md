@@ -8,13 +8,13 @@ TokenMonster is an ungreedy subword tokenizer and vocabulary generator, enabling
 
 Large and sub-optimal vocabularies lead to the waste of computational and memory resources in language models. By switching to TokenMonster, you can potentially achieve the same or better performance with a vocabulary that is half or even a quarter of the size.
 
-TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
+TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset within 24 hours on a typical desktop. 442 [pretrained vocabularies](#pretrained-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the pretrained or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster can also import existing vocabularies from other tokenizers, allowing you to take advantage of TokenMonster's fast, ungreedy tokenization whilst still using the existing vocabulary your model was trained with. Here is [how to import GPT2 Tokenizer](./yaml_guide/convert_gpt2tokenizer.py), and [here it is running in TokenMonster](https://bot.co/tokenmonster/gpt2tokenizer.html). The tokens and their IDs are identical to the original, but it tokenizes faster and can tokenize the same text with fewer tokens. Although if you have the option, you should always use a TokenMonster trained vocabulary as they are much more efficient.
-
 TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by over 50%. [See for yourself](https://bot.co/tokenmonster/).
+
+You can also import existing vocabularies from other tokenizers, allowing you to take advantage of TokenMonster's fast, ungreedy tokenization whilst still using the existing vocabulary your model was trained for. TokenMonster vocabularies for GPT2 Tokenizer and LLaMa Tokenizer are included.
 
 ## Features
 - Outperforms other tokenization algorithms in every area ([benchmark](./benchmark))
@@ -31,13 +31,13 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 - Add & remove tokens from existing vocabularies
 - Full support for "special" and "single-byte" tokens
 - Import and export vocabularies to and from human-readable YAML format
-- 420 prebuilt vocabularies ready for use
+- 422 pretrained vocabularies ready for use
 
 ## Table of Contents
 
 * Usage [Go](./go/) | [Python](./python/) | [Javascript](./javascript/) | [Training](./training/)
 * [Benchmark](./benchmark)
-* [Prebuilt Vocabularies](#prebuilt-vocabularies)
+* [Pretrained Vocabularies](#pretrained-vocabularies)
 * [Optimization Modes](#optimization-modes)
 * [Vocabulary Selection Guidance](#vocabulary-selection-guidance)
 * [Capcode](#capcode)
@@ -47,26 +47,30 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 * [Datasets](#datasets)
 * [Support & Consultation](#support--consultation)
 
-## Prebuilt Vocabularies
+## Pretrained Vocabularies
 
-440 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
+442 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
 
-Choose a dataset from:
-`code` `english` `englishcode` `fiction`
+- Choose a dataset from: `code` `english` `englishcode` `fiction`
+- Choose a vocab size from: `1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
+- Choose an [optimization mode](#optimization-modes) from: `unfiltered` `clean` `balanced` `consistent` `strict`
+- For a [capcode](capcode) disabled vocabulary add: `nocapcode`
+- Finally add the version number: `v1`
 
-Choose a vocab size from:
-`1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
+Examples: `fiction-24000-strict-v1` `code-4096-clean-nocapcode-v1`
 
-Choose an [optimization mode](#optimization-modes) from:
-`unfiltered` `clean` `balanced` `consistent` `strict`
-
-For a capcode disabled vocabulary add:
-`nocapcode`
-
-And finally add the version number:
-`v1`
-
-Examples: `fiction-24000-consistent-v1` `code-4096-clean-nocapcode-v1`
+Usage:
+```python
+import tokenmonster
+vocab = tokenmonster.load("englishcode-32000-consistent-v1")
+tokens = vocab.tokenize("This is a test.")
+```
+There are also 2 additional pre-built vocabularies: `gpt2` and `llama`. These are imports of GPT2 Tokenizer and LLaMa Tokenizer from Hugging Face into TokenMonster. The tokens and IDs are identical, however they do not always tokenize the text in exactly the same way. For example, LLaMa Tokenizer on Hugging tokenizes " decoded" as ` dec` `oded`, whilst TokenMonster tokenizes [correctly] to ` decode` `d`. TokenMonster trained vocabularies are massively more efficient, so only use `gpt2` and `llama` if you have to. The scripts used to import them into TokenMonster are [here](./yaml_guide).
+```python
+import tokenmonster
+vocab = tokenmonster.load("gpt2")
+tokens = vocab.tokenize("This is a test.")
+```
 
 ## Optimization Modes
 
@@ -152,7 +156,7 @@ Because the training process targets the tokenization algorithm, the training is
 
 ## Datasets
 
-The datasets used for generating the prebuilt vocabularies are all available on [Hugging Face](https://huggingface.co/datasets/alasdairforsythe/text-english-code-fiction-nonfiction). The sources and scripts used to generate these datasets are included in the training directory.
+The datasets used for generating the pretrained vocabularies are all available on [Hugging Face](https://huggingface.co/datasets/alasdairforsythe/text-english-code-fiction-nonfiction). The sources and scripts used to generate these datasets are included in the training directory.
 
 The training data mostly came from Red Pajamas [1B Token Sample](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T-Sample). However, to reduce formal English and emphasize other languages, informal writing and code, c4_sample & cc_sample were cropped to 100MB, and [Reddit conversations](https://huggingface.co/datasets/SophieTr/reddit_clean) data were added (also cropped to 100MB.)
 
