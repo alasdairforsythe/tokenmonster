@@ -1,6 +1,8 @@
 # TokenMonster
 
-TokenMonster is an ungreedy tokenizer and vocabulary generator, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
+_(**TokenMonster Update, July 10th:** This was a major update and breaking change. Moving forward there will be no more breaking changes.)_
+
+TokenMonster is an ungreedy subword tokenizer and vocabulary generator, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
@@ -9,6 +11,8 @@ Large and sub-optimal vocabularies lead to the waste of computational and memory
 TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset within 24 hours on a typical desktop. 440 [prebuilt vocabularies](#prebuilt-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the prebuilt or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
+
+TokenMonster can also import existing vocabularies from other tokenizers, allowing you to take advantage of TokenMonster's fast, ungreedy tokenization with already trained models. Here is [GPT2 Tokenizer](./yaml_guide/convert_gpt2tokenizer.py) imported into TokenMonster.
 
 TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by over 50%. [See for yourself](https://bot.co/tokenmonster/).
 
@@ -19,15 +23,14 @@ TokenMonster is a novel approach to tokenization with broad-ranging use potentia
 - Ungreedy: follows up to 6 parallel branches at a time
 - Fast: follows 6 branches faster than other algorithms can follow 1 ([benchmark](./benchmark))
 - Utilizes 'capcode' marker tokens to encode uppercasing and forward delete
-- Supports UTF-8, UTF-16 and binary
 - Successfully identifies words, subwords, common phrases and figures of speech by itself
 - Works with HTML tags, sequential spaces, tabs, etc. without wasting context
 - Can be trained on any language
-- Reliably achieves over 7 chr/token (depending on vocabulary size & optimization mode)
+- Achieves up to 7 chr/token (depending on vocabulary size & optimization mode)
 - Vocabulary files can be modified and resized even after training
 - Add & remove tokens from existing vocabularies
 - Full support for "special" and "single-byte" tokens
-- Optional UNK token
+- Import and export vocabularies to and from human-readable YAML format
 - 420 prebuilt vocabularies ready for use
 
 ## Table of Contents
