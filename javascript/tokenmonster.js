@@ -541,7 +541,6 @@ class TokenMonster {
               if (i2 < textLen && (temp1 == 0 || temp2 != 12)) {
                 // Look ahead from first option
                 [id2, len2, found2] = this.word2index.findLargestSubarray(text.subarray(i2, i2 + Math.min(textLen - i2, this.max_token_len)));
-                console.log(id2, found2);
                 //console.log("[1] '" + this.debug(id) + "' + '" + this.debug(id2) + "' (" + (len + len2) + ")");
 
                 if (found2) {
@@ -705,14 +704,14 @@ class TokenMonster {
                   }
                 }
 
-                console.log("Scores", score1, score1b, score2, score2b, score3, score3b);
+                //console.log("Scores", score1, score1b, score2, score2b, score3, score3b);
                 
                 switch (maxScore) {
                     case -1000000:
                       tokens.push(this.index2id[id]);
                       i += len;
                       forwardDelete = 0;
-                      console.log("branch 0");
+                      //console.log("branch 0");
                       continue outerLoop;
                     case score1:
                       tokens.push(this.index2id[id]);
@@ -720,7 +719,7 @@ class TokenMonster {
                       id = id2;
                       len = len2;
                       forwardDelete = 0;
-                      console.log("branch 1");
+                      //console.log("branch 1");
                       break;
                     case score2:
                       tokens.push(this.index2id[alternativeid]);
@@ -728,7 +727,7 @@ class TokenMonster {
                       id = id3;
                       len = len3;
                       forwardDelete = 0;
-                      console.log("branch 2");
+                      //console.log("branch 2");
                       break;
                     case score3:
                       // Go with branch 3
@@ -737,7 +736,7 @@ class TokenMonster {
                       id = id4;
                       len = len4;
                       forwardDelete = 0;
-                      console.log("branch 3");
+                      //console.log("branch 3");
                       break;
                     case score1b:
                       tokens.push(this.index2id[id]);
@@ -746,7 +745,7 @@ class TokenMonster {
                       id = id2b;
                       len = len2b;
                       forwardDelete = 1;
-                      console.log("branch 1b");
+                      //console.log("branch 1b");
                       break;
                     case score2b:
                       tokens.push(this.index2id[alternativeid]);
@@ -755,7 +754,7 @@ class TokenMonster {
                       id = id3b;
                       len = len3b;
                       forwardDelete = 1;
-                      console.log("branch 2b");
+                      //console.log("branch 2b");
                       break;
                     case score3b:
                       tokens.push(this.index2id[alternative2id]);
@@ -764,17 +763,17 @@ class TokenMonster {
                       id = id4b;
                       len = len4b;
                       forwardDelete = 1;
-                      console.log("branch 3b");
+                      //console.log("branch 3b");
                       break;
                     default:
-                      console.log("BRANCH ERROR!");
+                      //console.log("BRANCH ERROR!");
                       return tokens;
                 }
               } else {
                 tokens.push(this.index2id[id]);
                 i += len;
                 forwardDelete = 0;
-                console.log("branch 1 of 1");
+                //console.log("branch 1 of 1");
                 continue outerLoop;
               }
             }
@@ -785,7 +784,7 @@ class TokenMonster {
             if (this.useUnk) {
               tokens.push(this.unk);
             }
-            console.log("branch N/A");
+            //console.log("branch N/A");
           }
     }
     return tokens;

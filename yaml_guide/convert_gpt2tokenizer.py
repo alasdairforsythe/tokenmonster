@@ -29,8 +29,8 @@ for _, id in regular_tokens.items():
     token = gpt2tokenizer.decode([id]) # get the decoded form of the token
     token_bytes = token.encode() # convert to bytes string
     yaml_line = (
-        "  - id: " + str(id) + "\n" +
-        '    token: "TokenMonsterHexEncode{' + token_bytes.hex() + '}"\n' +
+        "  - id: " + str(id) + "\n"
+        '    token: "TokenMonsterHexEncode{' + token_bytes.hex() + '}"\n'
         "    encoded: true\n"
     )
     if token in special_tokens: # Is it a special token?
