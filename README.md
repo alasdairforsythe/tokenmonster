@@ -67,9 +67,7 @@ tokens = vocab.tokenize("This is a test.")
 ```
 There are also 2 additional pre-built vocabularies: `gpt2` and `llama`. These are imports of GPT2 Tokenizer and LLaMa Tokenizer from Hugging Face into TokenMonster. The tokens and IDs are identical, however they do not always tokenize the text in exactly the same way. For example, LLaMa Tokenizer on Hugging tokenizes " decoded" as ` dec` `oded`, whilst TokenMonster tokenizes [correctly] to ` decode` `d`. TokenMonster trained vocabularies are massively more efficient, so only use `gpt2` and `llama` if you have to. The scripts used to import them into TokenMonster are [here](./yaml_guide).
 ```python
-import tokenmonster
 vocab = tokenmonster.load("gpt2")
-tokens = vocab.tokenize("This is a test.")
 ```
 
 ## Optimization Modes
