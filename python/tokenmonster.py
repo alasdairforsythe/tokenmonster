@@ -897,9 +897,9 @@ class Vocab:
             return input.decode('latin-1')
         
     def _string_to_bytes(self, input):
-        if self.charset == 1:
+        if self.charset() == "UTF-8":
             return input.encode('utf-8')
-        elif self.charset == 2:
+        elif self.charset() == "UTF-16":
             return input.encode('utf-16-le')
         else:
             return input.encode('latin-1')
