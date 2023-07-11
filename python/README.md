@@ -280,7 +280,7 @@ Returns the character set used by the vocabulary.
 
 #### Returns
 
-- `string`: The character set used by the vocabulary. Possible values are "UTF-8", "UTF-16", "None".
+- `string`: The character set used by the vocabulary. Possible values are "UTF-8", "None".
 
 ### vocab.normalization()
 
@@ -288,7 +288,7 @@ Returns the normalization of the vocabulary.
 
 #### Returns
 
-- `string`: The normalization of the vocabulary. Possible values are "NFD", "None".
+- `string`: The normalization of the vocabulary. Possible values are "None", "NFD", "Lowercase", "Accents", "Quotemarks", "Collapse", "Trim", "LeadingSpace", "UnixLines".
 
 ### vocab.capcode()
 

@@ -889,17 +889,17 @@ class Vocab:
             raise RuntimeError("TokenMonster: Invalid encoding length")
     
     def _bytes_to_string(self, input):
-        if self.charset == 1:
+        if self._charset == 1:
             return input.decode('utf-8', errors='replace')
-        elif self.charset == 2:
+        elif self._charset == 2:
             return input.decode('utf-16-le', errors='replace')
         else:
             return input.decode('latin-1')
         
     def _string_to_bytes(self, input):
-        if self.charset == 1:
+        if self._charset == 1:
             return input.encode('utf-8')
-        elif self.charset == 2:
+        elif self._charset == 2:
             return input.encode('utf-16-le')
         else:
             return input.encode('latin-1')
@@ -910,7 +910,7 @@ class Vocab:
         elif isinstance(data, str):
             if len(data) == 0:
                 return []
-            if self.charset == 2:
+            if self._charset == 2:
                 return [data.encode("utf-16-le")]
             else:
                 return [data.encode("utf-8")]
@@ -925,7 +925,7 @@ class Vocab:
             else:
                 for i, item in enumerate(data):
                     if isinstance(item, str):
-                        if self.charset == 2:
+                        if self._charset == 2:
                             data[i] = item.encode("utf-16-le")
                         else:
                             data[i] = item.encode("utf-8")
