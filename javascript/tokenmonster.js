@@ -362,10 +362,6 @@ class TokenMonster {
 
     // Read normalization
     this.normalization = dataView.getUint8(2);
-    if (this.normalization > 2) {
-      throw new Error('Invalid TokenMonster vocabulary file.');
-    }
-
     let offset = 8
     
     // Read the UNK token

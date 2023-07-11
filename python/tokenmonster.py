@@ -1099,12 +1099,14 @@ class Vocab:
 ### Helper Functions
 
 def _is_prebuilt(name):
+    if name == "gpt2" or name == "llama":
+        return True
     parts = name.split("-")
     if len(parts) < 4 or len(parts) > 5:
         return False
     if not parts[0] in ["english", "code", "fiction", "englishcode"]:
         return False
-    if not parts[1] in ["1000", "2000", "4000", "8000", "12000", "16000", "24000", "32000", "40000", "50256", "65536", "100256"]:
+    if not parts[1] in ["1024", "2048", "4096", "8000", "12000", "16000", "24000", "32000", "40000", "50256", "65536", "100256"]:
         return False
     if not parts[2] in ["unfiltered", "clean", "balanced", "consistent", "strict"]:
         return False
