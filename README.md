@@ -12,7 +12,7 @@ TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset with
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text by over 50%. [See for yourself](https://bot.co/tokenmonster/).
+TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with 35% fewer tokens at the same vocabulary size compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text. And/or the vocabulary size can be reduced by 50 - 75%, freeing resources that can be used to make the model smarter and faster. [See for yourself](https://bot.co/tokenmonster/).
 
 You can also import existing vocabularies from other tokenizers, allowing you to take advantage of TokenMonster's fast, ungreedy tokenization whilst still using the existing vocabulary your model was trained for. TokenMonster vocabularies for GPT2 Tokenizer and LLaMa Tokenizer are included.
 
