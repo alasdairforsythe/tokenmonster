@@ -3529,7 +3529,7 @@ type YamlVocab struct {
 	ExcludeOtherBytes    bool       `yaml:"exclude-other-bytes,omitempty"`
 	Unk                  bool       `yaml:"unk,omitempty"`
 	UnkId                *int        `yaml:"unk-id,omitempty"`
-	Regular              []YamlItem `yaml:"regular,omitempty"`
+	Regular              []YamlItem `yaml:"tokens,omitempty"`
 	Special              []YamlItem `yaml:"special,omitempty"`
 	Delete               []YamlItem `yaml:"delete,omitempty"`
 }
@@ -3585,7 +3585,7 @@ func (vocab *Vocab) ExportYAML(writer io.Writer, orderByScore bool) {
 		w.WriteInt(int(vocab.unkToken))
 		w.WriteByte('\n')
 	}
-	w.WriteString("regular:\n")
+	w.WriteString("tokens:\n")
 
 	b := bytes.NewBuffer(make([]byte, 0, 42))
 	if orderByScore {

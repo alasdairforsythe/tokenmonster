@@ -19,8 +19,8 @@ unk: true                  # whether to assigned an ID for an UNK token
 unk-id: 20000              # optionally assign an ID to the UNK token (if exists)
 reset-token-ids: false     # if true, ids will be ignored and assigned from zero alphabetically
 
-# Regular tokens also include single byte tokens
-regular:
+# Regular tokens and single byte tokens
+tokens:
   - token:   "token1"
     id:      27            # id field is optional
     score:   0.127         # score field is optional
