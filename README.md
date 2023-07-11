@@ -49,7 +49,7 @@ You can also import existing vocabularies from other tokenizers, allowing you to
 
 ## Pretrained Vocabularies
 
-442 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
+442 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster), or in the Python library you can simply specify them by name and they'll be downloaded automatically.
 
 - Choose a dataset from: `code` `english` `englishcode` `fiction`
 - Choose a vocab size from: `1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
