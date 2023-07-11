@@ -49,7 +49,7 @@ You can also import existing vocabularies from other tokenizers, allowing you to
 
 ## Pretrained Vocabularies
 
-442 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster).
+442 vocabularies are planned or have already been built. Download them from [Hugging Face](https://huggingface.co/alasdairforsythe/tokenmonster), or in the Python library you can simply specify them by name and they'll be downloaded automatically.
 
 - Choose a dataset from: `code` `english` `englishcode` `fiction`
 - Choose a vocab size from: `1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
@@ -67,9 +67,7 @@ tokens = vocab.tokenize("This is a test.")
 ```
 There are also 2 additional pre-built vocabularies: `gpt2` and `llama`. These are imports of GPT2 Tokenizer and LLaMa Tokenizer from Hugging Face into TokenMonster. The tokens and IDs are identical, however they do not always tokenize the text in exactly the same way. For example, LLaMa Tokenizer on Hugging tokenizes " decoded" as ` dec` `oded`, whilst TokenMonster tokenizes [correctly] to ` decode` `d`. TokenMonster trained vocabularies are massively more efficient, so only use `gpt2` and `llama` if you have to. The scripts used to import them into TokenMonster are [here](./yaml_guide).
 ```python
-import tokenmonster
 vocab = tokenmonster.load("gpt2")
-tokens = vocab.tokenize("This is a test.")
 ```
 
 ## Optimization Modes
