@@ -6,7 +6,7 @@ TokenMonster is an ungreedy subword tokenizer and vocabulary generator, enabling
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
-Large and sub-optimal vocabularies lead to the waste of computational and memory resources in language models. By switching to TokenMonster, you can potentially achieve the same or better performance with a vocabulary that is half or even a quarter of the size.
+Large and sub-optimal vocabularies lead to the waste of computational and memory resources in language models. By switching to TokenMonster, you can potentially achieve the same or better performance with a vocabulary that is a quarter of the size.
 
 TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset within 24 hours on a typical desktop. 442 [pretrained vocabularies](#pretrained-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the pretrained or your own vocabularies.
 
@@ -27,8 +27,7 @@ You can also import existing vocabularies from other tokenizers, allowing you to
 - Works with HTML tags, sequential spaces, tabs, etc. without wasting context
 - Can be trained on any language
 - Achieves up to 7 chr/token (depending on vocabulary size & optimization mode)
-- Vocabulary files can be modified and resized even after training
-- Add & remove tokens from existing vocabularies
+- Vocabularies can be modified and resized after training
 - Full support for "special" and "single-byte" tokens
 - Import and export vocabularies to and from human-readable YAML format
 - 422 pretrained vocabularies ready for use
