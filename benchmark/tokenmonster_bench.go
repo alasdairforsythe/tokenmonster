@@ -35,12 +35,12 @@ func main() {
 		}
 
 		startTime := time.Now()
-		tokens, _, err := vocab.Tokenize(content)
+		tokens, _, err := vocab.Count(content)
 		elapsed := time.Since(startTime)
-		totaltokens += len(tokens)
+		totaltokens += tokens
 
 		// Print the elapsed time
-		fmt.Printf("Tokens: %d\n", len(tokens))
+		fmt.Printf("Tokens: %d\n", tokens)
 		fmt.Printf("Elapsed time: %s\n", elapsed)
 
 		// Calculate speed in MB/s

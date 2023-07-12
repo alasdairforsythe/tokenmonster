@@ -1030,11 +1030,11 @@ class Vocab:
 
     @classmethod
     def _disconnect(cls):
-        if cls.process is not None:
-            cls.process.stdin.close()
-            cls.process.stdout.close()
-            cls.process.kill()
-            cls.process = None
+        if cls._process is not None:
+            cls._process.stdin.close()
+            cls._process.stdout.close()
+            cls._process.kill()
+            cls._process = None
             for i in range(len(cls._vocabs)):
                 cls._vocabs[i]._modified_id = -1
             cls._vocabs = []
