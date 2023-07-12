@@ -49,6 +49,7 @@ It's my intention for this library to integrate directly into Hugging Face Trans
     - [vocab.export_yaml(order_by_score=False)](#vocabexport_yamlorder_by_scorefalse)
 3. Tokenization & Detokenization
     - [vocab.tokenize(text)](#vocabtokenizetext)
+    - [vocab.tokenize_count(text)](#vocabtokenize_counttext)
     - [vocab.decode(tokens)](#vocabdecodetokens)
     - [vocab.decoder()](#vocabdecoder)
     - [decoder.decode(tokens)](#decoderdecodetokens)
@@ -179,8 +180,8 @@ with open(file_path, 'wb') as file:
 Tokenizes a string into tokens according to the vocabulary.
 
 You can pass a string or a list of strings. If you pass a list of strings they are tokenized
-in parallel using as many threads as you supplied strings. Note that if you pass a string
-it is converted to a binary string, so if you binary string in the first place, feel
+in parallel using as many threads as the list size. Note that if you pass a string
+it is converted to a binary string, so if you have binary string in the first place, feel
 free to pass that instead.
 
 #### Parameters
@@ -189,12 +190,30 @@ free to pass that instead.
 
 #### Returns
 
-- `tokens` (int or list of int): The tokens to decode into a string.
+- `tokens` (list of ints or list of list of ints): The tokens IDs
 
 #### Usage
 
 ```python
 tokens = vocab.tokenize(text)
+```
+
+### vocab.tokenize_count(text)
+
+Same as tokenize, but it returns only the number of tokens.
+
+#### Parameters
+
+- `text` (string or list of strings): A string or bytes string, or list of strings or bytes strings.
+
+#### Returns
+
+- `n_tokens` (int or list of ints): The number of tokens for each input string
+
+#### Usage
+
+```python
+number_of_tokens = vocab.tokenize_count(text)
 ```
 
 ### vocab.decode(tokens)

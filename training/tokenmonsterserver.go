@@ -46,11 +46,16 @@ const ( // status codes
 	ERROR_READ_FAILED = 14
 	ERROR_INVALID_JOB = 15
 	ERROR_YAML_INVALID = 16
-	VERSION = 1
+	VERSION = 2
 )
 
 type work struct {
 	data []byte
+	err error
+}
+
+type workCount struct {
+	data int
 	err error
 }
 
@@ -735,6 +740,55 @@ func main() {
 				writeUint64(header9[1:], uint64(w.Len()))
 				os.Stdout.Write(header9)
 				w.WriteTo(os.Stdout)
+
+			case 20: // Tokenize Count
+				statusCode = HEADER_IS_LENGTH
+				if id >= uint32(len(vocabs)) {
+					sendError(ERROR_ID_DOES_NOT_EXIST)
+					continue
+				}
+				vocab = vocabs[id]
+				if vocab == nil {
+					sendError(ERROR_ID_IS_UNLOADED)
+					continue
+				}
+				numBatches = readUint32(data)
+				data = data[4:]
+				results := make([]workCount, numBatches)
+				if numBatches == 1 {
+					length = readUint64(data)
+					data = data[8:]
+					body := data[0:length]
+					ntokens, _, err := vocab.Count(body)
+					results[0] = workCount{ntokens, err}
+				} else {
+					var wg sync.WaitGroup
+					wg.Add(int(numBatches))
+					for i=0; i<numBatches; i++ {
+						length = readUint64(data)
+						data = data[8:]
+						body := data[0:length]
+						data = data[length:]
+						go func(i uint32, body []byte) {
+							ntokens, _, err := vocab.Count(body)
+							results[i] = workCount{ntokens, err}
+							wg.Done()
+						}(i, body)
+					}
+					wg.Wait()
+				}
+				if results[0].err != nil {
+					statusCode = ERROR_NORMALIZATION_FAILED
+				}
+				length = 4 + (uint64(len(results)) * 8)
+				header13[0] = statusCode
+				writeUint64(header13[1:], length)
+				writeUint32(header13[9:], numBatches)
+				os.Stdout.Write(header13)
+				for i:=0; i<len(results); i++ {
+					writeUint64(header8, uint64(results[i].data))
+					os.Stdout.Write(header8)
+				}
 
 			default: // Invalid job type
 				header9[0] = ERROR_INVALID_JOB

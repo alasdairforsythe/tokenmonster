@@ -961,6 +961,18 @@ func (vocab *Vocab) Tokenize(data []byte) ([]uint32, int, error) {
 	return vocab.tokenize(normalized)
 }
 
+// Tokenizes but returns the number of tokens instead of the tokens.
+func (vocab *Vocab) Count(data []byte) (int, int, error) {
+	if vocab.maxTokenLength == 0 {
+		return 0, 0, nil
+	}
+	normalized, err := normalize(data, vocab.usingCapcode, vocab.normalizer)
+	if err != nil {
+		return 0, 0, err
+	}
+	return vocab.tokenizeCount(normalized)
+}
+
 // Tokenizes directly into serialized bytes with either 16-bit, 24-bit or 32-bit encoded unsigned integers depending on the vocabulary size.
 // Set encodingLength to 0 for it to be chosen automatically, or set `encodingLength` to 2, 3 or 4.
 // The 2rd return value is the encodingLength that was used, and the 3rd is the number of characters for which there were no tokens.
@@ -1251,6 +1263,270 @@ func (vocab Vocab) tokenize(data []byte) ([]uint32, int, error) {
 		} else { // !found
 			if vocab.unkToken != DOES_NOT_EXIST {
 				tokens = append(tokens, vocab.unkToken)
+			}
+			i++
+			missing++
+			forwardDelete = 0
+		}
+	}	
+	return tokens, missing, nil
+}
+
+func (vocab Vocab) tokenizeCount(data []byte) (int, int, error) {
+	var i, i1, i2, i3, length, length1, length2, length3, length1b, length2b, length3b int
+	var index, index1, index2, index3, index1b, index2b, index3b uint32
+	var branchLength, missing, nWords int
+	var found, found1, found2, found3 bool
+	var score1, score2, score3, score1b, score2b, score3b, maxScore int
+	var forwardDelete int
+	var nextByte uint8
+	var original tokenOuter
+	var first, second tokenInner
+	var tokens int
+
+	lilbuf := make([]byte, vocab.maxTokenLength)
+	lilbuf[0] = 32
+	lilbufOffset := 1
+	if vocab.charset == 2 {
+		lilbufOffset = 2
+	}
+	lilbufStart := lilbuf[lilbufOffset:]
+	maxTokenLengthWithSpace := vocab.maxTokenLength - lilbufOffset
+
+	// Add 1 extra byte to the end because we look ahead 1 byte
+	lenData := len(data)
+	if cap(data) > len(data) {
+		data = data[0 : len(data) + 1]
+	} else {
+		data2 := make([]byte, len(data) + 1)
+		copy(data2, data)
+		data = data2
+	}
+
+	for i < lenData {
+		if index, length, found = vocab.dictionary.LongestSubstring(data[ i : i + branchless.Min(lenData - i, vocab.maxTokenLength) ]); found {
+			
+			checkpoint:
+
+				original = vocab.info[index].alt
+				i1 = i + length
+
+				// Skip checking alternatives if the longest first match is a single whole word of only letters: begins _A + ends A + next_is_space + 1word
+				if (i1 < lenData && (original.data.flag & 32 == 0 || vocab.beginByte[data[i1]] != 12)) {
+					
+					score1 = -1000000
+					score2 = -1000000
+					score3 = -1000000
+					score1b = -1000000
+					score2b = -1000000
+					score3b = -1000000
+					maxScore = -1000000
+
+					// First lookahead to the next token after me
+					index1, length1, found1 = vocab.dictionary.LongestSubstring(data[ i1 : i1 + branchless.Min(lenData - i1, vocab.maxTokenLength) ])
+
+					if found1 {
+						nWords = int(original.data.nWords) - forwardDelete
+						second = vocab.info[index1].alt.data
+						nextByte = vocab.beginByte[data[i1 + length1]]
+
+						score1 = ((	length + length1 + 										// the total length of the branch
+							int((original.data.flag >> 7) + (second.flag >> 7)) +			// 1 point for each token being either all letters or all punctuation
+							branchless.MaxZeroAnd(nWords - 1) + 							// 1 less than the number of word beginnings in the 1st token, min 0									
+							branchless.MaxZeroAnd(int(second.nWords) - 1) +					// 1 less than the number of word beginnings in the second token, min 0
+							int((second.flag >> 2) & 1) +										// 1 if the second token begins with a space
+							int((nextByte >> 2) & 1) +										// 1 if the next character after the 2nd token is a space
+							((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -		// 100x the number of whole words covered by this and next token
+							( (int(original.data.flag & 1 & (second.flag >> 1)) * 103) + 	// Deduct 103 if the first and second token split a word
+							(int((original.data.flag >> 3) & 1 & (second.flag >> 4)) * 100) + // Decuct 100 if it splits capcode markers from each other
+							((int(second.flag & 1 & nextByte) * 3)) )) 						// Deduct 3 if the second token ends inside a word
+						maxScore = score1
+						
+						// Check if we're in the middle of a word
+						if vocab.deleteToken != DOES_NOT_EXIST && second.flag & 2 != 0 && nextByte == 1 && second.nWords == 0 {
+							length1b = branchless.Min(lenData - i1, maxTokenLengthWithSpace)
+							copy(lilbufStart, data[ i1 : i1 + length1b ])
+							index1b, length1b, _ = vocab.dictionary.LongestSubstring(lilbuf[:length1b + lilbufOffset])
+							if length1b > length1 + 1 {
+								length1b -= lilbufOffset
+								second = vocab.info[index1b].alt.data
+								nextByte = vocab.beginByte[data[i1 + length1b]]
+								score1b = ((	length + length1b + 							// the total length of the branch
+									int((original.data.flag >> 7) + (second.flag >> 7)) +		// 1 point for each token being either all letters or all punctuation
+									branchless.MaxZeroAnd(nWords - 1) + 						// 1 less than the number of word beginnings in the 1st token, min 0									
+									branchless.MaxZeroAnd(int(second.nWords) - 1) +				// 1 less than the number of word beginnings in the second token, min 0
+									int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
+									((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
+									( (int(original.data.flag & 1) * 103) + 				// Deduct 103 if the first and second token split a word
+									(int((original.data.flag >> 3) & 1 & (second.flag >> 4)) * 100) + // Decuct 100 if it splits capcode markers from each other
+									((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
+									1 )) 														// Deduct 1 for using an extra token
+								maxScore = branchless.Max(maxScore, score1b)
+							}
+						}
+					}
+
+					if original.index != DOES_NOT_EXIST {
+						i2 = i + original.length - forwardDelete
+						index2, length2, found2 = vocab.dictionary.LongestSubstring(data[ i2 : i2 + branchless.Min(lenData - i2, vocab.maxTokenLength) ])
+
+						if found2 {
+							first = vocab.info[original.index].alt.data
+							nWords = int(first.nWords) - forwardDelete
+							second = vocab.info[index2].alt.data
+							nextByte = vocab.beginByte[data[i2 + length2]]
+							branchLength = original.length + length2 - forwardDelete
+
+							score2 = ((	branchLength + 										// the total length of the branch
+								int((first.flag >> 7) + (second.flag >> 7)) +					// 1 point for each token being either all letters or all punctuation
+								branchless.MaxZeroAnd(nWords - 1) + 						// 1 less than the number of word beginnings in the 1st token, min 0									
+								branchless.MaxZeroAnd(int(second.nWords) - 1) +				// 1 less than the number of word beginnings in the second token, min 0
+								int((second.flag >> 2) & 1) +									// 1 if the second token begins with a space
+								int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
+								((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
+								( (int(first.flag & 1 & (second.flag >> 1)) * 103) + 			// Deduct 103 if the first and second token split a word
+								(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +
+								((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
+								(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
+								(branchless.Equal(branchLength, length) * 10000) )) 		// Deduct 10,000 if the entire branch is the same size as the original first token
+							maxScore = branchless.Max(maxScore, score2)
+
+							// Check if we're in the middle of a word
+							if vocab.deleteToken != DOES_NOT_EXIST && second.flag & 2 != 0 && nextByte == 1 && second.nWords == 0 {
+								length2b = branchless.Min(lenData - i2, maxTokenLengthWithSpace)
+								copy(lilbufStart, data[ i2 : i2 + length2b ])
+								index2b, length2b, _ = vocab.dictionary.LongestSubstring(lilbuf[:length2b + lilbufOffset])
+								if length2b > length2 + 1 {
+									length2b -= lilbufOffset
+									second = vocab.info[index2b].alt.data
+									branchLength = original.length + length2b - forwardDelete
+									nextByte = vocab.beginByte[data[i2 + length2b]]
+									score2b = (( branchLength + 									// the total length of the branch
+										int((first.flag >> 7) + (second.flag >> 7)) +					// 1 point for each token being either all letters or all punctuation
+										branchless.MaxZeroAnd(nWords - 1) + 						// 1 less than the number of word beginnings in the 1st token, min 0									
+										branchless.MaxZeroAnd(int(second.nWords) - 1) +				// 1 less than the number of word beginnings in the second token, min 0
+										int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
+										((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
+										( (int(first.flag & 1) * 103) + 							// Deduct 103 if the first and second token split a word
+										(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +
+										((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
+										1 +															// Deduct 1 for using an extra token
+										(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
+										(branchless.Equal(branchLength, length) * 10000) )) 		// Deduct 10,000 if the entire branch is the same size as the original first token
+									maxScore = branchless.Max(maxScore, score2b)
+								}
+							}
+						}
+
+						if original.index2 != DOES_NOT_EXIST {
+							i3 = i + original.length2 - forwardDelete
+							index3, length3, found3 = vocab.dictionary.LongestSubstring(data[ i3 : i3 + branchless.Min(lenData - i3, vocab.maxTokenLength) ])
+
+							if found3 {
+								first = vocab.info[original.index2].alt.data
+								nWords = int(first.nWords) - forwardDelete
+								second = vocab.info[index3].alt.data
+								nextByte = vocab.beginByte[data[i3 + length3]]
+								branchLength = original.length2 + length3 - forwardDelete
+
+								score3 = ((	branchLength + 										// the total length of the branch
+									int((first.flag >> 7) + (second.flag >> 7)) +					// 1 point for each token being either all letters or all punctuation
+									branchless.MaxZeroAnd(nWords - 1) + 						// 1 less than the number of word beginnings in the 1st token, min 0									
+									branchless.MaxZeroAnd(int(second.nWords) - 1) +				// 1 less than the number of word beginnings in the second token, min 0
+									int((second.flag >> 2) & 1) +									// 1 if the second token begins with a space
+									int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
+									((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
+									( (int(first.flag & 1 & (second.flag >> 1)) * 103) + 			// Deduct 103 if the first and second token split a word
+									(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +
+									((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
+									(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
+									(branchless.Equal(branchLength, length) * 10000) )) 		// Deduct 10,000 if the entire branch is the same size as the original first token
+								maxScore = branchless.Max(maxScore, score3)
+
+								// Check if we're in the middle of a word
+								if vocab.deleteToken != DOES_NOT_EXIST && second.flag & 2 != 0 && nextByte == 1 && second.nWords == 0 {
+									length3b = branchless.Min(lenData - i3, maxTokenLengthWithSpace)
+									copy(lilbufStart, data[ i3 : i3 + length3b ])
+									index3b, length3b, _ = vocab.dictionary.LongestSubstring(lilbuf[:length3b + lilbufOffset])
+									if length3b > length3 + 1 {
+										length3b -= lilbufOffset
+										second = vocab.info[index3b].alt.data
+										branchLength = original.length2 + length3b - forwardDelete
+										nextByte = vocab.beginByte[data[i3 + length3b]]
+										score3b = (( branchLength + 									// the total length of the branch
+											int((first.flag >> 7) + (second.flag >> 7)) +					// 1 point for each token being either all letters or all punctuation
+											branchless.MaxZeroAnd(nWords - 1) + 						// 1 less than the number of word beginnings in the 1st token, min 0									
+											branchless.MaxZeroAnd(int(second.nWords) - 1) +				// 1 less than the number of word beginnings in the second token, min 0
+											int((nextByte >> 2) & 1) +									// 1 if the next character after the 2nd token is a space
+											((nWords + int(second.nWords + (nextByte >> 3))) * 100)) -	// 100x the number of whole words covered by this and next token
+											( (int(first.flag & 1) * 103) + 							// Deduct 103 if the first and second token split a word
+											(int((first.flag >> 3) & 1 & (second.flag >> 4)) * 100) +
+											((int(second.flag & 1 & nextByte) * 3)) +					// Deduct 3 if the second token ends inside a word
+											1 +															// Deduct 1 for using an extra token
+											(branchless.LessThan(branchLength, length) * 100) + 		// Deduct 100 if the entire branch is shorter than the longest first token
+											(branchless.Equal(branchLength, length) * 10000) )) 		// Deduct 10,000 if the entire branch is the same size as the original first token
+										maxScore = branchless.Max(maxScore, score3b)
+									}
+								}
+							}
+						}
+					}
+
+					switch maxScore {
+						case -1000000:
+							// Do nothing
+						case score1:
+							tokens++
+							i += length // forwardDelete is already applied to length
+							length = length1
+							index = index1
+							forwardDelete = 0
+							goto checkpoint
+						case score2:
+							tokens++
+							i += original.length - forwardDelete
+							length = length2
+							index = index2
+							forwardDelete = 0
+							goto checkpoint
+						case score3:
+							tokens++
+							i += original.length2 - forwardDelete
+							length = length3
+							index = index3
+							forwardDelete = 0
+							goto checkpoint
+						case score1b:
+							tokens++
+							i += length
+							length = length1b
+							index = index1b
+							forwardDelete = 1
+							goto checkpoint
+						case score2b:
+							tokens++
+							i += original.length - forwardDelete
+							length = length2b
+							index = index2b
+							forwardDelete = 1
+							goto checkpoint
+						case score3b:
+							tokens++
+							i += original.length2 - forwardDelete
+							length = length3b
+							index = index3b
+							forwardDelete = 1
+							goto checkpoint
+					}
+				}
+				// Skipped this branch (or case -1000000 from scores)
+				tokens++
+				i += length // forwardDelete is already applied to length
+				forwardDelete = 0
+
+		} else { // !found
+			if vocab.unkToken != DOES_NOT_EXIST {
+				tokens++
 			}
 			i++
 			missing++

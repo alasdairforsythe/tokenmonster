@@ -380,15 +380,15 @@ class Vocab:
         Tokenizes a string into tokens according to the vocabulary.
 
         You can pass a string or a list of strings. If you pass a list of strings they are tokenized
-        in parallel using as many threads as you supplied strings. Note that if you pass a string
-        it is converted to a binary string, so if you binary string in the first place, feel
+        in parallel using as many threads as the list size. Note that if you pass a string
+        it is converted to a binary string, so if you have binary string in the first place, feel
         free to pass that instead.
 
         Parameters:
             string or list of strings: A string or bytes string, or list of strings or bytes strings.
 
         Returns:
-            tokens (int or list of int): The tokens to decode into a string
+            tokens (list of ints or list of list of ints): The tokens IDs
 
         Usage:
             tokens = vocab.tokenize(text)
@@ -437,17 +437,84 @@ class Vocab:
         batches_reply = _read_uint32(response[0:4])
         if batches_reply != batch_size:
             raise RuntimeError("TokenMonster: batch size of response differs from request")
-        tokens = [None] * batches_reply
         offset = 4
+        if single:
+            batch_length = _read_uint64(response[offset:offset+8])
+            offset += 8
+            return self.deserialize_tokens(response[offset:offset+batch_length])
+        tokens = [None] * batches_reply
         for i in range(batch_size):
             batch_length = _read_uint64(response[offset:offset+8])
             offset += 8
             tokens[i] = self.deserialize_tokens(response[offset:offset+batch_length])
             offset += batch_length
-        if single:
-            return tokens[0]
+        return tokens
+        
+    def tokenize_count(self, text):
+        """
+        Same as tokenize, but it returns only the number of tokens.
+
+        Parameters:
+            string or list of strings: A string or bytes string, or list of strings or bytes strings.
+
+        Returns:
+            n_tokens (int or list of ints): The number of tokens for each input string
+
+        Usage:
+            tokens = vocab.tokenize_count(text)
+        """
+        if self._modified_id == -1:
+            raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
+        length = 4
+        batch_size = 1
+        payload = [b'']
+        single = False
+        if isinstance(text, str):
+            if len(text) == 0:
+                return
+            data = self._string_to_bytes(text)
+            length += len(data) + 8
+            payload.append(_write_uint64(len(data)))
+            payload.append(data)
+            single = True
+        elif isinstance(text, bytes):
+            if len(text) == 0:
+                return
+            length += len(text) + 8
+            payload.append(_write_uint64(len(text)))
+            payload.append(text)
+            single = True
+        elif is_iterable(text):
+            batch_size = len(text)
+            for i, item in enumerate(text):
+                if isinstance(item, str):
+                    data = self._string_to_bytes(item)
+                    payload.append(_write_uint64(len(data)))
+                    payload.append(data)
+                    length += len(data) + 8
+                elif isinstance(item, bytes):
+                    payload.append(_write_uint64(len(item)))
+                    payload.append(item)
+                    length += len(item) + 8
+                else:
+                    raise ValueError("TokenMonster: Input to tokenize must be a string or a list of strings.")
         else:
-            return tokens
+            raise ValueError("TokenMonster: Input to tokenize must be a string or a list of strings.")
+        # Send
+        job_type = 20
+        payload[0] = _write_uint32(batch_size)
+        response = Vocab._communicate(job_type, self.id, length, payload)
+        batches_reply = _read_uint32(response[0:4])
+        if batches_reply != batch_size:
+            raise RuntimeError("TokenMonster: batch size of response differs from request")
+        offset = 4
+        if single:
+            return _read_uint64(response[offset:offset+8])
+        tokens = [0] * batch_size
+        for i in range(batch_size):
+            tokens[i] = _read_uint64(response[offset:offset+8])
+            offset += 8
+        return tokens
 
     def get_dictionary(self):
         """
@@ -1204,4 +1271,4 @@ def is_iterable(obj):
     return isinstance(obj, Iterable)
 
 _TOKENMONSTER_URL = "https://huggingface.co/alasdairforsythe/tokenmonster/resolve/main/"
-_TMS_VERSION_ID = 1
+_TMS_VERSION_ID = 2
