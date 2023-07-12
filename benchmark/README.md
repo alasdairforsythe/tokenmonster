@@ -1,48 +1,32 @@
-## Benchmarks
+## Performance (Tokenization)
 
-This page consists of the benchmarks from the previous version of TokenMonster. The new version is 10x faster. I will update this page with the new benchmarks when the vocabularies have finished being trained.
+Coming soon.
 
-## Old Benchmarks
+## Performance (Speed)
 
-The following tables show the number of tokens it took to tokenize each test dataset (fewer is better) with both tiktoken and then TokenMonster. The percentage is performance relative to tiktoken (higher is better). All the benchmarking scripts are available in the files, and links to the datasets are below.
+### Single threaded performance
 
-#### Vocab Size 100256
-|                                     | the_pile       | github         | evov_instruct | total          |
-|-------------------------------------|----------------|----------------|---------------|----------------|
-| tiktoken cl100k_base                | 320446256 +0%  | 371531983 +0%  | 30131982 +0%  | 722110221 +0%  |
-| tokenmonster english-100256-capcode | **243860445 +32%** | 267760547 +39% | **22061974 +37%** | 533682966 +35% |
-| tokenmonster english-100256         | 246129464 +30% | 269909578 +38% | 22354408 +35% | 538393450 +34% |
-| tokenmonster code-100256-capcode    | 291714415 +10% | **241735648 +54%** | 24771080 +22% | 558221143 +29% |
-| tokenmonster code-100256            | 295035719 +9%  | 242439606 +53% | 25086094 +20% | 562561419 +28% |
-| tokenmonster english-32000-capcode  | 289148386 +11% | 314766168 +18% | 26286333 +15% | 630200887 +15% |
-| tokenmonster english-24000-capcode  | 302203947 +6%  | 330848326 +12% | 27628200 +9%  | 660680473 +9%  |
+|              | Range                |
+|--------------|-----------------------|
+| TokenMonster | 5.0 - 13 MB / second    |
+| tiktoken     | 4.0 - 7.0 MB / second     |
+| Hugging Face | 0.2 - 0.5 MB / second |
 
-Note that tokenmonster 24000-capcode vocabulary tokenizes better than tiktoken's 100256 vocabulary.
+### TokenMonster vs. Hugging Face (LLaMa Tokenizer)
 
-#### Vocab Size 50256
+The LLaMa Tokenizer running on Hugging Face Transformers used `35210511` tokens to tokenize "instruct" and `38383671` for "scifi", at an average speed of 0.29 MB/s. The TokenMonster import of LLaMa Tokenizer (with the exact same vocabulary), used `35083428` tokens for "instruct" and `38124152` for scifi (0.5% less tokens) and ran at an average speed of 12.5 MB/s.
 
-|                                     | the_pile       | github         | evov_instruct | total          |
-|-------------------------------------|----------------|----------------|---------------|----------------|
-| tiktoken p50k_base                  | 347805446 +0%  | 487665377 +0%  | 32464655 +0%  | 867935478 +0%  |
-| tokenmonster english-50256-capcode  | **269479690 +29%** | 294455227 +66% | **24442600 +33%** | 588377517 +48% |
-| tokenmonster english-50256          |                |                |               |                |
-| tokenmonster code-50256-capcode     |                |                |               |                |
-| tokenmonster code-50256             | 327110612 +6%  | **267733120 +82%** | 28236624 +15% | 623080356 +39% |
+### TokenMonster vs. tiktoken (GPT2 Tokenizer)
 
-This table is not yet complete because some of the vocabularies are still being trained.
+Comparing to [tiktoken's own benchmarks](https://github.com/openai/tiktoken#performance), they are claiming around 6.2 MB/s with GPT2 Tokenizer. TokenMonsters' import of GPT2 Tokenizer performed at 13.3 MB/s on "instruct" and 11.3 MB/s on "the_pile".
 
-### Single-Threaded Speed
+<img src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/d3814067-75f4-4787-8367-7c0b094470ef" alt="chart" width="750" />
 
-This table gives some rough figures for average speed of the "tokenization" as returned by the benchmarking scripts. Note that "detokenization" is very straightforward and is close to instant for every implementation. Tiktoken wins on speed of tokenization. This is partly due to it being a greedy algorithm, and partly due to their Python library being written in Rust. My Go implementation performs around 1/3 of the speed of tiktoken, and my Python implementation is around 1/3 again as it's written in native Python. That's not a major concern as tokenization time is not a bottleneck in any use case I know of. However, for the sake of optimization, I intend to write a C++ implementation and export a Python package on that, which I expect will bring it up to around 2.5 MB / second. TokenMonster will never be quite as fast as tiktoken because I'm using an ungreedy algorithm, which is always considering at least 2 branches and therefore is always going to have to do twice as many computations.
+### Notes on performance
 
-|                                     | average           |
-|-------------------------------------|-------------------|
-| tiktoken p50k_base                  | 6.2 MB / second   |
-| tiktoken cl100k_base                | 4.8 MB / second   |
-| tokenmonster (Go)                   | 1.7 MB / second   |
-| tokenmonster (Python)               | 0.5 MB / second   |
+The Python TokenMonster implementation calls the Go implementation for tokenization, so they are the same speed, but Python has overhead due to serialization and deserialization. The real-world performance of TokenMonster trained vocabularies, i.e. not `gpt2` or `llama` (which are simpler vocabularies) is closer to the 5 - 7 MB/s range, which is comparable with the tiktoken performance. It's worth mentioning that tiktoken is tokenizing greedily whilst TokenMonster achieves comparable or better speed whilst calculating up to 6 branches at any point in time.
 
-## Test Datasets
+## Benchmark Datasets
 
 For a fair test, the benchmarks were performed on datasets that the TokenMonster vocabularies had not previously seen.
 
@@ -50,4 +34,8 @@ For a fair test, the benchmarks were performed on datasets that the TokenMonster
 
 `github` is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7 GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1,313 MB.
 
-`evov_instruct` is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
+`instruct` is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
+
+`scifi` is [Scifi Stories Text Corpus](https://www.kaggle.com/datasets/jannesklaas/scifi-stories-text-corpus). I thought sci-fi would be a good test for the fiction tokenizing capability because the training datasets don't contain much sci-fi. Extracted size is 149 MB.
+
+.
