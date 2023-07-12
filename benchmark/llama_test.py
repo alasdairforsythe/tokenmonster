@@ -4,7 +4,7 @@
 
 import sys
 import timeit
-from transformers import LlamaTokenizerFast
+from transformers import LlamaTokenizer
 
 def load_text_from_file(file_path):
     try:
@@ -13,9 +13,6 @@ def load_text_from_file(file_path):
     except Exception as e:
         print(f"An error occurred while trying to read the file: {e}")
         return None
-
-def encode_tokens(tokenizer, text_from_file):
-    return tokenizer.encode(text_from_file)
 
 def benchmark():
     if len(sys.argv) < 2:
@@ -29,19 +26,17 @@ def benchmark():
         print("Failed to load the file.")
         return
 
-    tokenizer = LlamaTokenizerFast.from_pretrained("hf-internal-testing/llama-tokenizer")
+    tokenizer = LlamaTokenizer.from_pretrained('decapoda-research/llama-13b-hf', use_fast=True)
 
-    # Create a Timer object with setup and statement
-    timer = timeit.Timer(lambda: encode_tokens(tokenizer, text_from_file))
-
-    # Perform the benchmark
-    num_tokens = len(tokenizer.encode(text_from_file))
-    elapsed_time = timer.timeit(number=1)
+    # timeit library was returning zero, so just timing it this way
+    start_time = timeit.default_timer()
+    tokens = tokenizer.tokenize(text_from_file)
+    elapsed_time = (timeit.default_timer() - start_time) * 1_000_000
+    num_tokens = len(tokens)
 
     print(filename)
-    print(f'Number of tokens for LLaMa (32000) : {num_tokens}')
-    print(f'Time elapsed: {elapsed_time / 1000000:.3f} seconds')
-    print()
+    print(f'Number of tokens for LLaMa (32000): {num_tokens}')
+    print(f'Time elapsed (clock time): {elapsed_time:.3f} seconds')
 
 if __name__ == '__main__':
     benchmark()

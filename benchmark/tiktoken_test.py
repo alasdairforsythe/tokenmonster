@@ -31,17 +31,13 @@ def benchmark():
 
     for encoding_name in ["p50k_base", "cl100k_base"]:
         encoding = tiktoken.get_encoding(encoding_name)
-
-        # Create a Timer object with setup and statement
-        timer = timeit.Timer(lambda: encode_tokens(encoding, text_from_file))
-
-        # Perform the benchmark
-        num_tokens = len(encoding.encode(text_from_file, disallowed_special=()))
-        elapsed_time = timer.timeit(number=1) * 1_000_000  # Convert to microseconds
-
+        start_time = timeit.default_timer()
+        tokens = encode_tokens(encoding, text_from_file)
+        elapsed_time = (timeit.default_timer() - start_time) * 1_000_000  # Convert to microseconds
+        num_tokens = len(tokens)
         print(filename)
         print(f'Number of tokens for tiktoken {encoding_name} : {num_tokens}')
-        print(f'Time elapsed for {encoding_name}: {elapsed_time / 1000000:.3f} seconds')
+        print(f'Time elapsed for {encoding_name}: {elapsed_time / 1_000_000:.3f} seconds')
         print()
 
 if __name__ == '__main__':

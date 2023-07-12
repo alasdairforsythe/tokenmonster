@@ -238,26 +238,58 @@ func isLatin(b []byte) bool {
 }
 
 func isValid(b []byte) bool {
-	if charsetFlag != 2 {
-		return utf8.Valid(b)
-	}
-	for len(b) > 0 {
-		r, n := decodeRune(b)
-		if r == runeError {
-			return false
+	//if charsetFlag != 2 {
+		if usingCapcode != 1 {
+			return utf8.Valid(b)
+		} else {
+			var r rune
+			var n int
+			for len(b) > 0 {
+				if b[0] != capcode.NoCapcodeDeleteToken {
+					r, n = decodeRune(b)
+					if r == runeError {
+						return false
+					}
+					b = b[n:]
+				} else {
+					b = b[1:]
+				}
+			}
 		}
-		b = b[n:]
-	}
+	//}
+	//for len(b) > 0 {
+	//	r, n := decodeRune(b)
+	//	if r == runeError {
+	//		return false
+	//	}
+	//	b = b[n:]
+	//}
 	return true
 }
 
 func isValidLatin(b []byte) bool {
-	for len(b) > 0 {
-		r, n := decodeRune(b)
-		if r == runeError || (unicode.IsLetter(r) && !unicode.Is(unicode.Latin, r)) {
-			return false
+	var r rune
+	var n int
+	if usingCapcode != 1 {
+		for len(b) > 0 {
+			r, n = decodeRune(b)
+			if r == runeError || (unicode.IsLetter(r) && !unicode.Is(unicode.Latin, r)) {
+				return false
+			}
+			b = b[n:]
 		}
-		b = b[n:]
+	} else {
+		for len(b) > 0 {
+			if b[0] != capcode.NoCapcodeDeleteToken {
+				r, n = decodeRune(b)
+				if r == runeError || (unicode.IsLetter(r) && !unicode.Is(unicode.Latin, r)) {
+					return false
+				}
+				b = b[n:]
+			} else {
+				b = b[1:]
+			}
+		}
 	}
 	return true
 }
