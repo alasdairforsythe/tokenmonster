@@ -575,7 +575,7 @@ in multiple calls, then you can use the vocabulary decode method directly.
 
 ```python
 vocab = tokenmonster.load("english-32000-balanced-v1")
-decoder = vocab.Decoder()
+decoder = vocab.decoder()
 decoded_string = decoder.decode(tokens)
 decoded_string += decoder.decode(more_tokens)
 ```
