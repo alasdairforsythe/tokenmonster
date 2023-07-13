@@ -1,6 +1,6 @@
 ## Performance (Tokenization)
 
-[Click here](https://bot.co/tokenmonster/benchmark.html) for an interactive benchmark for all pretrained vocabularies, plus LLaMa Tokenizer, GPT2 Tokenizer, and tiktoken.
+[Click here for an interactive benchmark](https://bot.co/tokenmonster/benchmark.html) for all pretrained vocabularies, plus LLaMa Tokenizer, GPT2 Tokenizer, and tiktoken.
 
 ## Performance (Speed)
 
