@@ -202,35 +202,35 @@ class TokenMonster {
     this.deleteToken = 0;
   }
 
-  normalize(text) {
+  applyNormalize(text) {
     const flag = this.normalization;
     if (flag == 1) {
       return text.normalize("NFD");
     } else if (flag == 0) {
       return text;
     }
-    if (flag & 128 != 0) {
+    if ((flag & 128) != 0) {
       text = text.replace(/\r\n/g, '\n');
     }
-    if (flag & 16 != 0) {
+    if ((flag & 16) != 0) {
       text = text.replace(/ {2,}/g, ' ');
     }
-    if (flag & 8 != 0) {
+    if ((flag & 8) != 0) {
       text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"');
     }
-    if (flag & 32 != 0) {
+    if ((flag & 32) != 0) {
       text = text.trim();
     }
-    if (flag & 64 != 0) {
-      text = text.startsWith(' ') ? text : ' ' + text;
+    if ((flag & 64) != 0) {
+      if (!text.startsWith(' ')) { text = ' ' + text; }
     }
-    if (flag & 4 != 0) {
+    if ((flag & 4) != 0) {
       text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     }
-    if (flag & 2 != 0) {
+    if ((flag & 2) != 0) {
       text = text.toLowerCase();
     }
-    if (flag & 1 != 0) {
+    if ((flag & 1) != 0) {
       text = text.normalize("NFD");
     }
     return text;
@@ -448,7 +448,7 @@ class TokenMonster {
       const decoder = new TextDecoder('utf-8');
       text = decoder.decode(text);
     }
-    text = this.normalize(text);
+    text = this.applyNormalize(text);
     if (this.capcode == 2) {
       text = capcode_encode(text);
     } else if (this.capcode == 1) {
@@ -549,17 +549,17 @@ class TokenMonster {
                   score1 = (
                             len + len2 + (flag >> 7) + (flag2 >> 7)
                             + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
-                            + (flag2 >> 2 & 1) + (beginByte >> 2 & 1)
+                            + ((flag2 >> 2) & 1) + ((beginByte >> 2) & 1)
                             + ((nWords + nWords2 + (beginByte >> 3)) * 100)
                           ) - (
-                            ((flag & 1 & (flag2 >> 1)) * 103)
+                            (((flag & 1) & (flag2 >> 1)) * 103)
                             + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
                             + ((flag2 & 1 & beginByte) * 3)
                           );
                   maxScore = score1;
 
                   // If this is the middle of a word, try it as a word
-                  if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
+                  if (this.hasDeleteToken && (flag2 & 2) !== 0 && beginByte === 1 && nWords2 === 0) {
                     testlen = Math.min(textLen - i2, this.max_token_len - this.charset);
                     lilbuf.set(text.subarray(i2, i2 + testlen), this.charset);
                     [id2b, len2b, found2b] = this.word2index.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
@@ -572,12 +572,12 @@ class TokenMonster {
                       score1b = (
                                 branch1b + (flag >> 7) + (flag2 >> 7)
                                 + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
-                                + (beginByte >> 2 & 1)
+                                + ((beginByte >> 2) & 1)
                                 + ((nWords + nWords2 + (beginByte >> 3)) * 100)
                               ) - (
                                 ((flag & 1) * 103)
                                 + (((flag >> 3) & 1 & (flag2 >> 4)) * 100)
-                                + ((flag2 & 1 & beginByte) * 3)
+                                + (((flag2 & 1) & beginByte) * 3)
                                 + 1
                               );
                       maxScore = Math.max(maxScore, score1b);
@@ -604,7 +604,7 @@ class TokenMonster {
                     score2 = (
                                branch2 + (flag >> 7) + (flag2 >> 7)
                               + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
-                              + (flag2 >> 2 & 1) + (beginByte >> 2 & 1)
+                              + ((flag2 >> 2) & 1) + ((beginByte >> 2) & 1)
                               + ((nWords + nWords2 + (beginByte >> 3)) * 100)
                             ) - (
                               ((flag & 1 & (flag2 >> 1)) * 103)
@@ -615,7 +615,7 @@ class TokenMonster {
                     maxScore = Math.max(maxScore, score2);
 
                     // If this is the middle of a word, try it as a word
-                   if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
+                   if (this.hasDeleteToken && (flag2 & 2) !== 0 && beginByte === 1 && nWords2 === 0) {
                       testlen = Math.min(textLen - i3, this.max_token_len - this.charset);
                       lilbuf.set(text.subarray(i3, i3 + testlen), this.charset);
                       [id3b, len3b, found3b] = this.word2index.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
@@ -628,7 +628,7 @@ class TokenMonster {
                         score2b = (
                                   branch2b + (flag >> 7) + (flag2 >> 7)
                                   + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
-                                  + (beginByte >> 2 & 1)
+                                  + ((beginByte >> 2) & 1)
                                   + ((nWords + nWords2 + (beginByte >> 3)) * 100)
                                 ) - (
                                   ((flag & 1) * 103)
@@ -661,7 +661,7 @@ class TokenMonster {
                         score3 = (
                                   branch3 + (flag >> 7) + (flag2 >> 7)
                                   + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
-                                  + (flag2 >> 2 & 1) + (beginByte >> 2 & 1)
+                                  + ((flag2 >> 2) & 1) + ((beginByte >> 2) & 1)
                                   + ((nWords + nWords2 + (beginByte >> 3)) * 100)
                                 ) - (
                                   ((flag & 1 & (flag2 >> 1)) * 103)
@@ -671,7 +671,7 @@ class TokenMonster {
                         score3 -= (branch3 <= len) ? ((branch3 == len) ? 10000 : 100) : 0;
                         maxScore = Math.max(maxScore, score3);
 
-                        if (this.hasDeleteToken && flag2 & 2 !== 0 && beginByte === 1 && nWords2 === 0) {
+                        if (this.hasDeleteToken && (flag2 & 2) !== 0 && beginByte === 1 && nWords2 === 0) {
                           testlen = Math.min(textLen - i4, this.max_token_len - this.charset);
                           lilbuf.set(text.subarray(i4, i4 + testlen), this.charset);
                           [id4b, len4b, found4b] = this.word2index.findLargestSubarray(lilbuf.subarray(0, testlen + this.charset));
@@ -684,7 +684,7 @@ class TokenMonster {
                             score3b = (
                                       branch3b + (flag >> 7) + (flag2 >> 7)
                                       + ((nWords > 0 ? nWords - 1 : 0) + (nWords2 > 0 ? nWords2 - 1 : 0))
-                                      + (beginByte >> 2 & 1)
+                                      + ((beginByte >> 2) & 1)
                                       + ((nWords + nWords2 + (beginByte >> 3)) * 100)
                                     ) - (
                                       ((flag & 1) * 103)

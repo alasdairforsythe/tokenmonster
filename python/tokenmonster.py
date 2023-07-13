@@ -174,9 +174,11 @@ class Vocab:
                     path = os.path.join(Vocab._dir, clean + ".vocab")
                 else:
                     if _is_prebuilt(clean):
-                        path = clean
-                        Vocab._download(_TOKENMONSTER_URL + "vocabs/" + path + ".vocab", path + ".vocab")
-                        if not Vocab._file_exists(path + ".vocab"):
+                        path = clean + ".vocab"
+                        Vocab._download(_TOKENMONSTER_URL + "vocabs/" + path, path)
+                        if Vocab._file_exists(path):
+                            path = os.path.join(Vocab._dir, path)
+                        else:
                             raise RuntimeError("TokenMonster: Unable to download the prebuilt vocabulary, please check availability at huggingface.co/alasdairforsythe/tokenmonster")
         elif path.startswith("http://") or path.startswith("https://"):
             fname = os.path.basename(path)
@@ -190,10 +192,10 @@ class Vocab:
                     raise FileNotFoundError("TokenMonster: Unable to download " + path + " to " + Vocab._dir)
         elif os.path.isfile(path):
             pass
-        elif Vocab._file_exists(path + ".vocab"):
-            path = os.path.join(Vocab._dir, path + ".vocab")
         elif Vocab._file_exists(path):
             path = os.path.join(Vocab._dir, path)
+        elif Vocab._file_exists(path + ".vocab"):
+            path = os.path.join(Vocab._dir, path + ".vocab")
         else:
             raise FileNotFoundError("TokenMonster: Unable to locate " + path)
         # Now read the vocabulary header
