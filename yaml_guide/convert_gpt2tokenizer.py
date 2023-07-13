@@ -25,18 +25,24 @@ yaml = (
 
 # Write the tokens into the YAML vocabulary (hex encoded to avoid handling escape sequences)
 special_tokens = []
-for _, id in regular_tokens.items():
-    token = gpt2tokenizer.decode([id]) # get the decoded form of the token
+n_tokens = 0
+for original_token, id in regular_tokens.items():
+    token = original_token.replace('Ġ', ' ') # Convert the word start character to a space
     token_bytes = token.encode() # convert to bytes string
+    token_hex = token_bytes.hex()
+
     yaml_line = (
         "  - id: " + str(id) + "\n"
-        '    token: "TokenMonsterHexEncode{' + token_bytes.hex() + '}"\n'
+        '    token: "TokenMonsterHexEncode{' + token_hex + '}"\n'
         "    encoded: true\n"
     )
     if token in special_tokens: # Is it a special token?
         special_tokens.append(yaml_line)
     else: # It's a regular token
         yaml += yaml_line
+    n_tokens += 1
+
+print("Number of tokens:", n_tokens)
 
 # Write the special tokens after the regular tokens
 if len(special_tokens) > 0:
