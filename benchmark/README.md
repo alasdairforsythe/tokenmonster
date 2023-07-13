@@ -1,6 +1,6 @@
 ## Performance (Tokenization)
 
-Coming soon.
+[Click here](https://bot.co/tokenmonster/benchmark.html) for an interactive benchmark for all pretrained vocabularies, plus LLaMa Tokenizer, GPT2 Tokenizer, and tiktoken.
 
 ## Performance (Speed)
 
@@ -30,12 +30,14 @@ The Python TokenMonster implementation calls the Go implementation for tokenizat
 
 For a fair test, the benchmarks were performed on datasets that the TokenMonster vocabularies had not previously seen.
 
-`the_pile` is the test dataset from [The Pile](https://the-eye.eu/public/AI/pile/), with the text extracting using [extract_text_from_jsonl_parquet.py](/training). It represents general text. Extracted size is 1,526 MB.
+`the_pile` is the test dataset from [The Pile](https://the-eye.eu/public/AI/pile/), with the text extracting using [extract_text_from_jsonl_parquet.py](/training). Size is 1.3 GB.
 
-`github` is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7 GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1,313 MB.
+`github` is [this random file](https://data.together.xyz/redpajama-data-1T/v1.0.0/github/filtered_a777da5620f1467f8df3616b17d533dc.sampled.jsonl) (1.7 GB direct download) from [urls.txt](https://data.together.xyz/redpajama-data-1T/v1.0.0/urls.txt) from [Red Pajama](https://huggingface.co/datasets/togethercomputer/RedPajama-Data-1T). It was also extracted using [extract_text_from_jsonl_parquet.py](/training). It represents code. Extracted size is 1.5 GB.
 
-`instruct` is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Extracted size is 137 MB.
+`instruct` is a bunch of chat & instruct finetunes from WizardLM's [alpaca_evol_instruct_70k.json](https://huggingface.co/datasets/WizardLM/evol_instruct_70k/tree/main). This was used as-is and respresents chatbot conversational text. Size is 137 MB.
 
-`scifi` is [Scifi Stories Text Corpus](https://www.kaggle.com/datasets/jannesklaas/scifi-stories-text-corpus). I thought sci-fi would be a good test for the fiction tokenizing capability because the training datasets don't contain much sci-fi. Extracted size is 149 MB.
+`scifi` is [Scifi Stories Text Corpus](https://www.kaggle.com/datasets/jannesklaas/scifi-stories-text-corpus). I thought sci-fi would be a good test for the fiction tokenizing capability because the training datasets don't contain much sci-fi. Size is 149 MB.
+
+`github` and `the_pile` were further process with `onlyvalidlatin.go` to remove any invalid UTF-8 and non-Latin characters (e.g. Chinese). I made this decision because all of the pretrained vocabularies were trained with `-only-latin` and `-only-valid` parameters, hence they must use single byte tokens to tokenize any non-Latin characters. Because `github` and `the_pile` contained a lot of non-Latin script, whilst `scifi` and `instruct` did not, this would otherwise skew the benchmarks.
 
 .
