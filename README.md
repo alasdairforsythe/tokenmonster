@@ -1,7 +1,5 @@
 # TokenMonster
 
-_(**TokenMonster Update, July 10th:** This was a major update and breaking change. Moving forward there will be no more breaking changes.)_
-
 TokenMonster is an ungreedy subword tokenizer and vocabulary generator, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
@@ -77,7 +75,7 @@ All the optimization modes are lossless. The stricter the optimization mode (hig
 
 `1 clean` introduces filters to avoid overfitting. It forces the vocabulary to begin words with a space, and limits the way in which whitespace can be combined with other characters.
 
-`2 balanced` prioritizes whole words and attempts to dissuade the vocabulary from doing things that are difficult to learn, such as using a delete forward marker at the end of a token.
+`2 balanced` prioritizes whole words and attempts to dissuade the vocabulary from doing things that are difficult to learn.
 
 `3 consistent` is a looser version of `strict`. It aims to limit the number of different tokens that can represent the same word or phrase, and doesn't allow for open-close delimeters to be combined with words or each other. Numbers also become limited to fewer variants.
 
@@ -85,7 +83,7 @@ All the optimization modes are lossless. The stricter the optimization mode (hig
 
 ## Vocabulary Selection Guidance
 
-Based on my experience, there is a "sweet spot" for a vocabulary size to get the most out of your model. It's tempting to use large vocabularies, which has been norm, but you can see on the [TokenMonster Tester](https://bot.co/tokenmonster/) that reducing the vocabulary by 50% or even 75% can often result in only a relatively minor increase to the number of tokens required to tokenize it. Even the very general `englishcode` vocabularies, which are for all intents and purposes multi-lingual, do very well at vocab size `24000`. Story or article writing models can go as low as `4096` vocabulary size without feeling the pain.
+Based on my experience, there is a "sweet spot" for a vocabulary size to get the most out of your model. It's tempting to use large vocabularies, which has been norm, but you can see on the [TokenMonster Tester](https://bot.co/tokenmonster/) and [Interactive Benchmark](https://bot.co/tokenmonster/benchmark.html) that reducing the vocabulary by 50 - 75% can often result in only a relatively minor increase to the number of tokens required to tokenize it. Even the very general `englishcode` vocabularies, which are for all intents and purposes multi-lingual, do very well at vocab size `24000`. Story or article writing models can go as low as `4096` vocabulary size [and still tokenize at 4 characters per token](https://bot.co/tokenmonster/benchmark.html?a=fiction-8000-balanced-v1&b=fiction-4096-balanced-v1&c=fiction-2048-balanced-v1).
 
 TokenMonster works well with small vocabularies because it's using an optimal selection process. In most cases it's simply not necessary to use vocabulary sizes greater than `32000`, unless it's a multi-lingual vocabulary. More is not better. Using a vocabulary that is excessively large can lead to inefficient usage of embeddings, not to mention an over-complicated grammar. The embeddings for all those unneeded tokens occupy memory and computational resources that could be used more efficiently.
 
@@ -95,7 +93,7 @@ My advice is to find the smallest vocabulary size that meets your requirements. 
 
 In regards to optimization modes, `strict` is the one to go for if your model is limited by its size or largely undertrained. If it's a small model that isn't particularly smart, and you want to get the most out of it, choose `strict` because it'll probably result in a smarter model given that the simpler grammar is quicker to learn (words, punctuation and modifiers are all separate tokens.) On the other hand, if you're training something serious with enough training data so that each token is exposed to a variety of contexts in order to learn it's more complex grammar, you probably want to go for `clean` or `balanced`.
 
-`strict` performs very well with longform natural text, such as novels and articles, but it's too strict for code. `consistent` will give the best balance of consistency for tokenizing code whilst keeping the grammar simple. `balanced` and `clean` are excellent at compressing code into fewer tokens, but this comes with the trade-off of more complex grammar. I'd therefore recommend `consistent` for most code generating models. That said, the complexity of the grammar is also reduced by reducing the vocabulary size, so it may be in your interest to aim for `balanced` with a fairly small vocabulary size, such as `16000`. All of this you can determine by playing around with [TokenMonster Tester](https://bot.co/tokenmonster/).
+`strict` performs very well with longform natural text, such as novels and articles, but it's too strict for code. `consistent` will give the best balance of consistency for tokenizing code whilst keeping the grammar simple. `balanced` and `clean` are excellent at compressing code into fewer tokens, but this comes with the trade-off of more complex grammar. That said, a smaller vocabulary implies a simpler grammar (less possible combinations), so it may be in your interest to aim for `balanced` with a fairly small vocabulary size, such as `16000`. All of this you can determine by playing around with [TokenMonster Tester](https://bot.co/tokenmonster/).
 
 ## Capcode
 
