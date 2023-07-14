@@ -3240,9 +3240,9 @@ func (vocab *Vocab) PrivateGenerateVocab(yamlData []byte, tokens [][]byte, score
 		}
 	}
 	for _, v := range addTokens {
-		if len(v) > 0 && len(v) <= 40  {
+		if len(v) > 0 {
 			v, err = normalize(v, usingCapcode, vocab.normalizer)
-			if err == nil {
+			if err == nil && len(v) <= 40 {
 				if _, exists = deleter[string(v)]; !exists {
 					for _, special := range newSpecialTokens {
 						if bytes.Contains(v, special) {
