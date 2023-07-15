@@ -51,7 +51,7 @@ You can also import existing vocabularies from other tokenizers, allowing you to
 - Choose a dataset from: `code` `english` `englishcode` `fiction`
 - Choose a vocab size from: `1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
 - Choose an [optimization mode](#optimization-modes) from: `unfiltered` `clean` `balanced` `consistent` `strict`
-- For a [capcode](capcode) disabled vocabulary add: `nocapcode`
+- For a [capcode](#capcode) disabled vocabulary add: `nocapcode`
 - Finally add the version number: `v1`
 
 Examples: `fiction-24000-strict-v1` `code-4096-clean-nocapcode-v1`
