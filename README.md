@@ -4,13 +4,13 @@ TokenMonster is an ungreedy subword tokenizer and vocabulary generator, enabling
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">
 
-Large and sub-optimal vocabularies lead to the waste of computational and memory resources in language models. By switching to TokenMonster, you can potentially achieve the same or better performance with a vocabulary that is a [quarter of the size](https://bot.co/tokenmonster/benchmark.html?a=tiktoken%20cl100k_base&b=tiktoken%20p50k_base&c=englishcode-24000-unfiltered-v1).
+Large and sub-optimal vocabularies lead to the waste of computational and memory resources in language models. By switching to TokenMonster, you can potentially achieve the same or better performance with a vocabulary that is [less than a quarter of the size](https://bot.co/tokenmonster/benchmark.html?a=tiktoken%20cl100k_base&b=englishcode-24000-clean-v1&c=englishcode-16000-unfiltered-v1).
 
 TokenMonster can train and generate an optimal vocabulary on a 1 GB dataset within 24 hours on a typical desktop. 442 [pretrained vocabularies](#pretrained-vocabularies) are provided, as well as tools to train your own vocabularies & implementations in Go, Python & Javascript for tokenization and detokenization using the pretrained or your own vocabularies.
 
 You can [test TokenMonster in your browser here](https://bot.co/tokenmonster/), tokenizing live in native Javascript.
 
-TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with [37.5% fewer tokens at the same vocabulary size](https://bot.co/tokenmonster/benchmark.html?a=gpt2%20tokenmonster&b=tiktoken%20p50k_base&c=englishcode-50256-clean-v1) compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text. And/or the vocabulary size can be [reduced by 75% or more](https://bot.co/tokenmonster/benchmark.html?a=tiktoken%20cl100k_base&b=tiktoken%20p50k_base&c=englishcode-24000-unfiltered-v1), freeing resources that can be used to make the model smarter and faster.
+TokenMonster is a novel approach to tokenization with broad-ranging use potential, but its primary motivation is to improve the training, inference and context-length of large language models. By using a more optimal vocabulary and ungreedy tokenization algorithm, text can be represented with [37.5% fewer tokens at the same vocabulary size](https://bot.co/tokenmonster/benchmark.html?a=gpt2%20tokenmonster&b=tiktoken%20p50k_base&c=englishcode-50256-clean-v1) compared to other modern tokenizing methods, increasing the speed of inference, training and the length of text. And/or the vocabulary size can be [reduced by 75% or more](https://bot.co/tokenmonster/benchmark.html?a=tiktoken%20cl100k_base&b=tiktoken%20p50k_base&c=englishcode-24000-clean-v1), freeing resources that can be used to make the model smarter and faster.
 
 You can also import existing vocabularies from other tokenizers, allowing you to take advantage of TokenMonster's fast, ungreedy tokenization whilst still using the existing vocabulary your model was trained for. TokenMonster vocabularies for GPT2 Tokenizer and LLaMa Tokenizer are included.
 
@@ -51,7 +51,7 @@ You can also import existing vocabularies from other tokenizers, allowing you to
 - Choose a dataset from: `code` `english` `englishcode` `fiction`
 - Choose a vocab size from: `1024` `2048` `4096` `8000` `16000` `24000` `32000` `40000` `50256` `65536` `100256`
 - Choose an [optimization mode](#optimization-modes) from: `unfiltered` `clean` `balanced` `consistent` `strict`
-- For a [capcode](capcode) disabled vocabulary add: `nocapcode`
+- For a [capcode](#capcode) disabled vocabulary add: `nocapcode`
 - Finally add the version number: `v1`
 
 Examples: `fiction-24000-strict-v1` `code-4096-clean-nocapcode-v1`
