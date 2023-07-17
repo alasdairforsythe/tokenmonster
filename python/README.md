@@ -61,12 +61,9 @@ It's my intention for this library to integrate directly into Hugging Face Trans
     - [vocab.capcode()](#vocabcapcode)
     - [vocab.mode()](#vocabmode)
     - [vocab.unk_token_id()](#vocabunk_token_id)
-    - [vocab.convert_ids_to_tokens(ids)](#vocabconvert_ids_to_tokensids)
-    - [vocab.convert_ids_to_tokens_decoded(ids)](#vocabconvert_ids_to_tokens_decodedids)
     - [vocab.id_to_token(id)](#vocabid_to_tokenid)
     - [vocab.id_to_token_decoded(id)](#vocabid_to_token_decodedid)
     - [vocab.token_to_id(token)](#vocabtoken_to_idtoken)
-    - [vocab.convert_tokens_to_ids(tokens)](#vocabconvert_tokens_to_idstokens)
 5. Vocabulary Modification
     - [vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)](#vocabmodifyadd_special_tokens-add_regular_tokensnone-delete_tokensnone-resizenone-change_unknone-reset_token_idsfalse)
     - [vocab.add_token(token)](#vocabadd_tokentoken)
@@ -78,6 +75,7 @@ It's my intention for this library to integrate directly into Hugging Face Trans
     - [vocab.enable_unk_token()](#vocabenable_unk_token)
     - [vocab.disable_unk_token()](#vocabdisable_unk_token)
 6. Other
+    - [del](#del)
     - [tokenmonster.set_local_directory(dir=None)](#tokenmonsterset_local_directorydirnone)
     - [tokenmonster.disconnect()](#tokenmonsterdisconnect)
     - [vocab.serialize_tokens(integer_list)](#vocabserialize_tokensinteger_list)
@@ -190,7 +188,7 @@ free to pass that instead.
 
 #### Returns
 
-- `tokens` (list of ints or list of list of ints): The tokens IDs
+- `tokens` (numpy array or list of numpy array): The tokens IDs
 
 #### Usage
 
@@ -201,6 +199,10 @@ tokens = vocab.tokenize(text)
 ### vocab.tokenize_count(text)
 
 Same as tokenize, but it returns only the number of tokens.
+
+The number of tokens is the same as you would get from `tokenize`. If you want to count any characters
+for which there are no tokens or single byte tokens, you should `enable_unk_token()`. It's okay to
+enable `enable_unk_token()`, run `tokenize_count` and then `disable_unk_token()`.
 
 #### Parameters
 
@@ -226,7 +228,7 @@ use the decoder object.
 
 #### Parameters
 
-- `tokens` (int or list of int): The tokens to decode into a string.
+- `tokens` (int, list of int, or numpy array): The tokens to decode into a string.
 
 #### Returns
 
@@ -342,30 +344,6 @@ Returns the ID of the UNK token, or 'None' type if there is no UNK token.
 
 - `int or None`: The ID of the UNK token. None if there is no UNK token.
 
-### vocab.convert_ids_to_tokens(ids)
-
-Get the token string from any token ID, in its capcode-encoded form.
-
-#### Parameters
-
-- `ids` (int or list of ints): The token IDs.
-
-#### Returns
-
-- `list of strings`: The token strings corresponding to the input IDs. None type for any IDs that are not in the vocabulary.
-
-### vocab.convert_ids_to_tokens_decoded(ids)
-
-Get the token string from any token IDs, in its capcode-decoded form.
-
-#### Parameters
-
-- `ids` (int or list of ints): The token IDs.
-
-#### Returns
-
-- `list of strings`: The token strings corresponding to the input IDs. None type for any IDs that are not in the vocabulary.
-
 ### vocab.id_to_token(id)
 
 Get the token string from a single token ID, in its capcode-encoded form.
@@ -403,20 +381,6 @@ This works for both capcode-encoded "raw" tokens and their decoded form.
 #### Returns
 
 - `int or None`: The ID of the token. None if the token is not in the vocabulary.
-
-### vocab.convert_tokens_to_ids(tokens)
-
-Returns the IDs of the corresponding tokens. 'None' for any not in the vocabulary.
-
-This works for both capcode-encoded "raw" tokens and their decoded form.
-
-#### Parameters
-
-- `tokens` (string or list of strings): The tokens to convert to IDs.
-
-#### Returns
-
-- `list of ints`: The token IDs corresponding to the input tokens. None type for any tokens that are not in the vocabulary.
 
 ## Vocabulary Modification
 
@@ -584,7 +548,7 @@ in multiple calls, then you can use the vocabulary decode method directly.
 
 #### Parameters
 
-- `tokens` (int or list of ints): A token ID or list of token IDs.
+- `tokens` (int, list of ints, or numpy array): A token ID or list of token IDs.
 
 #### Returns
 
@@ -600,6 +564,19 @@ decoded_string += decoder.decode(more_tokens)
 ```
 
 ## Other
+
+### del
+
+Once you are finished with a vocab or decoder object, to free it from memory
+use the `del` syntax. This is worthwhile if you are creating many
+temporary decoder objects.
+
+#### Usage
+
+```python
+vocab = tokenmonster.load("english-32000-balanced-v1")
+del vocab
+```
 
 ### tokenmonster.set_local_directory(dir=None)
 
@@ -627,12 +604,12 @@ Disconnects and closes tokenmonsterserver.
 
 ### vocab.serialize_tokens(integer_list)
 
-Serializes tokens from a list of ints into a binary string.
+Serializes tokens from a list of ints or numpy array into a binary string.
 The `encoding_length` used is from vocab.encoding_length.
 
 #### Parameters
 
-- `integer_list` (list of ints): The tokens to serialize.
+- `integer_list` (list of ints or numpy array): The tokens to serialize.
 
 #### Returns
 
@@ -640,7 +617,7 @@ The `encoding_length` used is from vocab.encoding_length.
 
 ### vocab.deserialize_tokens(binary_string)
 
-Deserializes a binary string back into a list of ints (tokens).
+Deserializes a binary string into a numpy array of token IDs.
 The `encoding_length` used is from vocab.encoding_length.
 
 #### Parameters
@@ -649,5 +626,5 @@ The `encoding_length` used is from vocab.encoding_length.
 
 #### Returns
 
-- `list of ints`: The deserialized tokens.
+- `np.array`: The deserialized tokens.
 .

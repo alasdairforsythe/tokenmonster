@@ -1,3 +1,4 @@
+import numpy as np
 import struct
 import subprocess
 import os
@@ -125,7 +126,7 @@ class Vocab:
             in multiple calls, then you can use the vocabulary decode method directly.
 
             Parameters:
-                tokens (int or list of ints): A token ID or list of token IDs.
+                tokens (int or list of ints or numpy array): A token ID or list of token IDs.
 
             Returns:
                 string: A human-readable string derived from the input tokens.
@@ -140,14 +141,16 @@ class Vocab:
                 raise RuntimeError("Access denied to expired tokenmonster.Decoder instance.")
             if is_iterable(tokens):
                 if len(tokens) == 0:
-                    return
+                    return ''
+                if is_iterable(tokens[0]):
+                    raise ValueError("TokenMonster: You can't batch decode on a decoder object, use the vocab decoder for that.")
             else:
                 if isinstance(tokens, int):
                     tokens = [tokens]
+                elif isinstance(tokens, (np.uint16, np.uint32)):
+                    tokens = np.array([tokens])
                 else:
                     raise ValueError("TokenMonster: Decoder decode accepts int or list of ints.")
-            if is_iterable(tokens[0]):
-                raise ValueError("TokenMonster: You can't batch decode on a decoder object, use the vocab decoder for that.")
             payload = self.parent.serialize_tokens(tokens)
             job_type = self.parent.encoding_length + 5
             response = Vocab._communicate(job_type, self.id, len(payload), payload)
@@ -317,7 +320,7 @@ class Vocab:
         use the decoder object.
 
         Parameters:
-            tokens (int or list of int): The tokens to decode into a string
+            tokens (int or list of int or numpy array): The tokens to decode into a string
 
         Returns:
             string: The composed string from the input tokens.
@@ -337,27 +340,27 @@ class Vocab:
         else:
             if isinstance(tokens, int):
                 tokens = [tokens]
+            elif isinstance(tokens, (np.uint16, np.uint32)):
+                tokens = np.array([tokens])
             else:
-                raise ValueError("TokenMonster: Input to decode must be an int, a list of ints, or a list of list of ints.")
-        if isinstance(tokens[0], int):
+                raise ValueError("TokenMonster: Input to decode must be an int, list of ints, list of lists, or numpy array.")
+        if not is_iterable(tokens[0]):
             data = self.serialize_tokens(tokens)
             payload.append(_write_uint64(len(data)))
             payload.append(data)
             length += len(data) + 8
             single = True
-        elif is_iterable(tokens[0]):
+        else:
             batch_size = len(tokens)
             single = False
             for _, item in enumerate(tokens):
-                if isinstance(item, int):
+                if not is_iterable(item):
                     data = self.serialize_tokens(item)
                     payload.append(_write_uint64(len(data)))
                     payload.append(data)
                     length += len(item) + 8
                 else:
-                    raise ValueError("TokenMonster: Input to decode must be an int, a list of ints, or a list of list of ints.")
-        else:
-            raise ValueError("TokenMonster: Input to decode must be an int, a list of ints, or a list of list of ints.]")
+                    raise ValueError("TokenMonster: Input to decode must be an int, list of ints, list of lists, or numpy array.")
         # Send
         job_type = self.encoding_length
         payload[0] = _write_uint32(batch_size)
@@ -390,7 +393,7 @@ class Vocab:
             string or list of strings: A string or bytes string, or list of strings or bytes strings.
 
         Returns:
-            tokens (list of ints or list of list of ints): The tokens IDs
+            tokens (numpy array or list of numpy arrays): The tokens IDs
 
         Usage:
             tokens = vocab.tokenize(text)
@@ -455,6 +458,10 @@ class Vocab:
     def tokenize_count(self, text):
         """
         Same as tokenize, but it returns only the number of tokens.
+
+        The number of tokens is the same as you would get from `tokenize`. If you want to count any characters
+        for which there are no tokens or single byte tokens, you should `enable_unk_token()`. It's okay to
+        enable `enable_unk_token()`, run `tokenize_count` and then `disable_unk_token()`.
 
         Parameters:
             string or list of strings: A string or bytes string, or list of strings or bytes strings.
@@ -523,7 +530,7 @@ class Vocab:
         Returns a dictionary of all tokens in the vocabulary.
 
         This returns a list of dictionaries with keys "id", "token", "token_decoded", "type" and "score".
-        Note that you should not attempt to use this to interpret tokenized sequences because the capcode
+        Note that you should not attempt to use this to decode tokenized sequences because the capcode
         encoded tokens can change the way the next tokens are decoded. Therefore you should always use
         one of the two "decode" methods.
 
@@ -573,26 +580,6 @@ class Vocab:
                 self.unk = id
         return self.dictionary
     
-    def convert_ids_to_tokens(self, ids):
-        """
-        Get the token string from any token ID, in it's capcode-encoded form.
-
-        Parameters:
-            ids: int or list of ints
-
-        Returns:
-            List of strings (None type for any that are not in the vocabulary)
-        """
-        if self.dictionary is None:
-            self.get_dictionary()
-        tokens = []
-        for id in ids:
-            if id >= 0 and id < len(self.dictionary):
-                tokens.append(self.dictionary[id]['token'])
-            else:
-                tokens.append(None)
-        return tokens
-    
     def id_to_token(self, id):
         """
         Get the token string from a single token ID, in it's capcode-encoded form.
@@ -610,26 +597,6 @@ class Vocab:
         else:
             return None
     
-    def convert_ids_to_tokens_decoded(self, ids):
-        """
-        Get the token string from any token IDs, in it's capcode-decoded form.
-
-        Parameters:
-            ids: int or list of ints
-
-        Returns:
-            List of strings (None type for any that are not in the vocabulary)
-        """
-        if self.dictionary is None:
-            self.get_dictionary()
-        tokens = []
-        for id in ids:
-            if id >= 0 and id < len(self.dictionary):
-                tokens.append(self.dictionary[id]['token_decoded'])
-            else:
-                tokens.append(None)
-        return tokens
-    
     def id_to_token_decoded(self, id):
         """
         Get the token string from a single token ID, in it's capcode-decoded form.
@@ -646,25 +613,6 @@ class Vocab:
             return self.dictionary[id]['token_decoded']
         else:
             return None
-    
-    def convert_tokens_to_ids(self, tokens):
-        """
-        Returns the IDs of the corresponding tokens. 'None' for any not in the vocabulary.
-
-        This works for both capcode-encoded "raw" tokens, and their decoded form.
-
-        Parameters:
-            tokens: string or list of strings
-
-        Returns:
-            List of strings (None type for any that are not in the vocabulary)
-        """
-        if self.dictionary is None:
-            self.get_dictionary()
-        ids = []
-        for tok in tokens:
-            ids.append(self.token_to_id.get(tok, None))
-        return ids
     
     def token_to_id(self, token):
         """
@@ -815,12 +763,14 @@ class Vocab:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         if isinstance(id, int):
             id = [id]
+        elif isinstance(id, (np.uint16, np.uint32)):
+            id = np.array([id])
         else:
             if not is_iterable(id):
                 raise ValueError("TokenMonster: Input to delete_token_by_id must be int or list of ints.")
             if len(id) == 0:
                 return self.vocab_size
-            if not isinstance(id[0], int):
+            if not is_int(id[0]):
                 raise ValueError("TokenMonster: Input to delete_token_by_id must be int or list of ints.")
         payload = _write_uint32(len(id)) + _pack_32bit_ints(id)
         job_type = 16
@@ -931,21 +881,21 @@ class Vocab:
 
     def deserialize_tokens(self, binary_string):
         """
-        Deserializes a binary string back into a list of ints (tokens).
+        Deserializes a binary string into a numpy array of tokens IDs.
         The encoding_length needs to be recorded separetely.
         """
         if self.encoding_length == 2:
             return _unpack_16bit_ints(binary_string)
         elif self.encoding_length == 4:
             return _unpack_32bit_ints(binary_string)
-        elif self.encoding_length == 3:
-            return _unpack_24bit_ints(binary_string)
+        #elif self.encoding_length == 3:
+        #    return _unpack_24bit_ints(binary_string)
         else:
             raise RuntimeError("TokenMonster: Invalid encoding length")
         
     def serialize_tokens(self, integer_list):
         """
-        Serializes tokens from a list of ints into a binary string.
+        Serializes tokens from a numpy array into a binary string.
         The encoding_length needs to be recorded separetely.
         """
         if self.encoding_length == 2:
@@ -1230,24 +1180,36 @@ def _get_binary_filename():
 
 def _unpack_16bit_ints(binary_string):
     n = len(binary_string) // 2
-    return struct.unpack('<' + 'H'*n, binary_string)
+    return np.frombuffer(binary_string, dtype='<u2', count=n)
 
-def _unpack_24bit_ints(binary_string):
-    n = len(binary_string) // 3
-    return [int.from_bytes(binary_string[i:i+3], byteorder='little') for i in range(0, 3*n, 3)]
+#def _unpack_24bit_ints(binary_string):
+#    n = len(binary_string) // 3
+#    return [int.from_bytes(binary_string[i:i+3], byteorder='little') for i in range(0, 3*n, 3)]
 
 def _unpack_32bit_ints(binary_string):
     n = len(binary_string) // 4
-    return struct.unpack('<' + 'I'*n, binary_string)
+    return np.frombuffer(binary_string, dtype='<u4', count=n)
 
 def _pack_16bit_ints(integer_list):
-    return struct.pack('<' + 'H'*len(integer_list), *integer_list)
+    if isinstance(integer_list, np.ndarray):
+        if integer_list.dtype.byteorder == '>':
+            return integer_list.byteswap().tobytes()
+        else:
+            return integer_list.tobytes()
+    else:
+        return struct.pack('<' + 'H' * len(integer_list), *integer_list)
 
-def _pack_24bit_ints(integer_list):
-    return b''.join([int(i).to_bytes(3, byteorder='little') for i in integer_list])
+#def _pack_24bit_ints(integer_list):
+#    return b''.join([int(i).to_bytes(3, byteorder='little') for i in integer_list])
 
 def _pack_32bit_ints(integer_list):
-    return struct.pack('<' + 'I'*len(integer_list), *integer_list)
+    if isinstance(integer_list, np.ndarray):
+        if integer_list.dtype.byteorder == '>':
+            return integer_list.byteswap().tobytes()
+        else:
+            return integer_list.tobytes()
+    else:
+        return struct.pack('<' + 'I' * len(integer_list), *integer_list)
 
 def _write_uint32(input):
     return struct.pack('<I', input)
@@ -1271,6 +1233,11 @@ def is_iterable(obj):
     if isinstance(obj, (str, bytes)):
         return False
     return isinstance(obj, Iterable)
+
+def is_int(obj):
+    if isinstance(obj, (int, np.uint16, np.uint32)):
+        return True
+    return False
 
 _TOKENMONSTER_URL = "https://huggingface.co/alasdairforsythe/tokenmonster/resolve/main/"
 _TMS_VERSION_ID = 2
