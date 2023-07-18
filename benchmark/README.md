@@ -2,6 +2,8 @@
 
 [Click here for an interactive benchmark](https://bot.co/tokenmonster/benchmark.html) for all pretrained vocabularies, plus LLaMa Tokenizer, GPT2 Tokenizer, and tiktoken.
 
+[Click here for a chart comparing optimization mode, chr/tok and vocab size](https://bot.co/tokenmonster/line.html) for all TokenMonster vocabularies.
+
 ## Performance (Speed)
 
 ### Single threaded performance
