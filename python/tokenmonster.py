@@ -81,7 +81,7 @@ def new(yaml):
         vocab.encoding_length = 2
     vocab.fname = None
     vocab.dictionary = None
-    vocab.token_to_id = None
+    vocab._token_to_id = None
     vocab._modified_id = 0
     vocab._decoders = []
     return vocab
@@ -224,7 +224,7 @@ class Vocab:
         payload = _write_uint8(len(path_encoded)) + path_encoded
         self.id = Vocab._communicate(10, 0, len(payload), payload)
         self.dictionary = None
-        self.token_to_id = None
+        self._token_to_id = None
         self._modified_id = 0
         self._decoders = []
 
@@ -558,7 +558,7 @@ class Vocab:
         self.vocab_size = size # it should be already the same
         offset = 4
         self.dictionary = {}
-        self.token_to_id = {}
+        self._token_to_id = {}
         self.unk = None
         types = ["regular", "single", "special", "unk"]
         for _ in range(size):
@@ -574,8 +574,8 @@ class Vocab:
             token_decoded = self._bytes_to_string(response[offset : offset + len_token_decoded])
             offset += len_token_decoded
             self.dictionary[id] = {'id': id, 'token': token, 'token_decoded': token_decoded, 'type': types[typ], 'score': score}
-            self.token_to_id[token] = id
-            self.token_to_id[token_decoded] = id
+            self._token_to_id[token] = id
+            self._token_to_id[token_decoded] = id
             if typ == 3:
                 self.unk = id
         return self.dictionary
@@ -628,7 +628,7 @@ class Vocab:
         """
         if self.dictionary is None:
             self.get_dictionary()
-        return self.token_to_id.get(token, None)
+        return self._token_to_id.get(token, None)
     
     def unk_token_id(self):
         """
@@ -956,7 +956,7 @@ class Vocab:
     def _modified(self):
         self._modified_id += 1
         self.dictionary = None
-        self.token_to_id = None
+        self._token_to_id = None
         self.unk = False
         if self.vocab_size > 65536:
             self.encoding_length = 4
