@@ -37,7 +37,7 @@ The Python library uses a subprocess called `tokenmonsterserver` which runs in t
 
 ### Multithreading
 
-To tokenize a batch in parallel, you can pass a list of strings to `tokenize` and they will be tokenized in parallel by `tokenmonsterserver` and returned together. However, multithreading within Python, for example with Hugging Face `datasets` `.map(num_proc=8)` or similar is **not currently supported** and will result in an error. For now, use batches instead of Python multithreading.
+To tokenize a batch in parallel, you can pass a list of strings to `tokenize` and they will be tokenized in parallel by `tokenmonsterserver` and returned together. However, multithreading within Python, for example with Hugging Face `datasets` `.map(num_proc=8)` or similar is **not currently supported** and will result in an error. I will implement a clean solution for multithreaded access in the near future, but for now, use batches instead of Python multithreading.
 
 .
 ## Full Documentation
