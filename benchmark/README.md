@@ -20,7 +20,7 @@ The LLaMa Tokenizer running on Hugging Face Transformers used `35210511` tokens 
 
 ### TokenMonster vs. tiktoken (GPT2 Tokenizer)
 
-Comparing to [tiktoken's own benchmarks](https://github.com/openai/tiktoken#performance), they are claiming around 6.2 MB/s with GPT2 Tokenizer. TokenMonsters' import of GPT2 Tokenizer performed at 13.3 MB/s on "instruct" and 11.3 MB/s on "the_pile".
+Comparing to [tiktoken's own benchmarks](https://github.com/openai/tiktoken#performance), they are claiming 6.2 MB/s with GPT2 Tokenizer. I got the same performance for GPT2 on tiktoken. TokenMonsters' import of GPT2 Tokenizer performed at 13.3 MB/s on "instruct" and 11.3 MB/s on "the_pile".
 
 <img src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/d3814067-75f4-4787-8367-7c0b094470ef" alt="chart" width="750" />
 
