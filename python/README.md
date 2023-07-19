@@ -65,7 +65,7 @@ It's my intention for this library to integrate directly into Hugging Face Trans
     - [vocab.id_to_token_decoded(id)](#vocabid_to_token_decodedid)
     - [vocab.token_to_id(token)](#vocabtoken_to_idtoken)
 5. Vocabulary Modification
-    - [vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)](#vocabmodifyadd_special_tokens-add_regular_tokensnone-delete_tokensnone-resizenone-change_unknone-reset_token_idsfalse)
+    - [vocab.modify(add_special_tokens=None, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None)](#vocabmodifyadd_special_tokensnone-add_regular_tokensnone-delete_tokensnone-resizenone-change_unknone-reset_token_idsfalse)
     - [vocab.add_token(token)](#vocabadd_tokentoken)
     - [vocab.delete_token(token)](#vocabdelete_tokentoken)
     - [vocab.delete_token_by_id(id)](#vocabdelete_token_by_idid)
@@ -384,7 +384,7 @@ This works for both capcode-encoded "raw" tokens and their decoded form.
 
 ## Vocabulary Modification
 
-### vocab.modify(add_special_tokens, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None, reset_token_ids=False)
+### vocab.modify(add_special_tokens=None, add_regular_tokens=None, delete_tokens=None, resize=None, change_unk=None, reset_token_ids=False)
 
 Modifies the vocabulary. Doing so invalidates all decoder objects associated with the
 model before modification.
@@ -399,6 +399,7 @@ Notes:
   or resizing, they can be restored by resizing the vocabulary to be larger.
 - After modifying you will need to "save" the vocabulary to a file or it'll be
   lost when the script ends.
+- To ensure token IDs remain sequential, pass reset_token_ids = True
 - delete_tokens can be in either raw or decoded form.
 
 #### Parameters

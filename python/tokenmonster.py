@@ -163,8 +163,11 @@ class Vocab:
                         Vocab._communicate(6, self.id, 0)
         
         def __del__(self):
-            if not sys.is_finalizing():
-                self._unload()
+            try:
+                if not sys.is_finalizing():
+                    self._unload()
+            except AttributeError:
+                pass
 
     def __init__(self, path):
         Vocab._set_local_directory()
@@ -237,8 +240,11 @@ class Vocab:
                     Vocab._communicate(11, self.id, 0)
 
     def __del__(self):
-        if not sys.is_finalizing():
-            self._unload()
+        try:
+            if not sys.is_finalizing():
+                self._unload()
+        except AttributeError:
+            pass
 
     def __len__(self):
         return self.vocab_size
@@ -644,7 +650,7 @@ class Vocab:
             self.get_dictionary()
         return self.unk
 
-    def modify(self, add_special_tokens, add_regular_tokens = None, delete_tokens = None, resize = None, change_unk = None, reset_token_ids = False):
+    def modify(self, add_special_tokens = None, add_regular_tokens = None, delete_tokens = None, resize = None, change_unk = None, reset_token_ids = False):
         """
         Modifies the vocabulary. Doing so invalidates all decoder objects associated with the
         model before modification.
@@ -1037,7 +1043,7 @@ class Vocab:
         elif status == 16: # ERROR_INVALID_JOB
             raise ValueError("TokenMonster: YAML is invalid")
         else:
-            raise RuntimeError("tokenmonsterserver: Unknown error occurred")
+            raise RuntimeError("tokenmonsterserver: Data corruption. TokenMonster does not currently supported multithreading, use batches instead.")
 
     @classmethod
     def _start_process(cls):
