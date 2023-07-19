@@ -35,9 +35,9 @@ It's possible to pass a token to the Decoder and get an empty string in response
 
 The Python library uses a subprocess called `tokenmonsterserver` which runs in the background to tokenize and decode, this is downloaded automatically the first time you use the library. The `tokenmonsterserver` file is located in the tokenmonster directory, which is `~/_tokenmonster` by default, but you can set it elsewhere with the `TokenMonster.set_local_directory` function before loading the first vocabulary.
 
-### Help to integrate with Hugging Face
+### Multithreading
 
-It's my intention for this library to integrate directly into Hugging Face Transformers. However, Hugging Face's tokenizer classes don't make much sense to me. If you can help explain to me which features are necessary and which are not, please start a discussion or issue on here.
+To tokenize a batch in parallel, you can pass a list of strings to `tokenize` and they will be tokenized in parallel by `tokenmonsterserver` and returned together. However, multithreading within Python, for example with Hugging Face `datasets` `.map(num_proc=8)` or similar is **not currently supported** and will result in an error. I will implement a clean solution for multithreaded access in the near future, but for now, use batches instead of Python multithreading.
 
 .
 ## Full Documentation
