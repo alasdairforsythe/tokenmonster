@@ -83,7 +83,7 @@ All the optimization modes are lossless. The stricter the optimization mode (hig
 
 ## Vocabulary Selection Guidance
 
-View [TokenMonster Vocabulary Comparison](https://bot.co/tokenmonster/line.html), to see a line chart of the relationship between vocab size, optimization mode and characters/token. From this chart I can stipulate the rule of thumb that **every doubling of vocabulary size instreases the characters/token by 0.5**. This pattern starts from vocab size 4096 and consistent up to 100256.
+View [TokenMonster Vocabulary Comparison](https://bot.co/tokenmonster/line.html), to see a line chart of the relationship between vocab size, optimization mode and characters/token. From this chart I can stipulate the rule of thumb that **every doubling of vocabulary size inscreases the characters/token by 0.5**. This pattern starts from vocab size 4096 and consistent up to 100256.
 
 It's tempting to use large vocabularies, which has been norm, but you can see on the [TokenMonster Tester](https://bot.co/tokenmonster/) and [Interactive Benchmark](https://bot.co/tokenmonster/benchmark.html) that reducing the vocabulary by 50 - 75% can often result in only a relatively minor increase to the number of tokens required to tokenize it. Even the very general `englishcode` vocabularies, which are for all intents and purposes multi-lingual, do very well at vocab size `24000`. Story or article writing models can go as low as `4096` vocabulary size [and still tokenize at 4 characters per token](https://bot.co/tokenmonster/benchmark.html?a=fiction-8000-balanced-v1&b=fiction-4096-balanced-v1&c=fiction-2048-balanced-v1).
 
