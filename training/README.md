@@ -92,7 +92,7 @@ Usage of ./getalltokens:
   -only-latin
         if enabled, tokens that contains letters must be in Latin script (default false)
   -only-valid
-        if enabled, tokens must contain full and valid characters, except single byte tokens (default false)
+        if enabled, tokens must contain full and valid UTF-8 characters, except single byte tokens (default false)
   -output string
         output filename for the dictionary (required)
   -workers int
@@ -126,7 +126,7 @@ These can be combined together, e.g. `-norm "lowercase collapse trim quotemarks 
 
 ### -only-latin
 
-If enabled, tokens may not contain characters from non-Latin scripts. If you only intend to tokenize Latin script, it's best to enable this. Characters in those scripts can still be tokenized from single byte tokens.
+If enabled, tokens may not contain characters from non-Latin scripts. If you only intend to tokenize Latin script, it's best to enable this. Characters in non-Latin scripts can still be tokenized with single byte tokens.
 
 ### -only-valid
 
