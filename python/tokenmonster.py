@@ -39,6 +39,22 @@ def load(path):
     """
     return Vocab(path)
 
+def load_multiprocess_safe(path):
+    """
+    Loads a TokenMonster vocabulary from file, URL or by name.
+    It's safe for multiprocessing, but vocabulary modification is disabled and tokenization is slightly slower.
+
+    Parameters:
+        path (string): A filepath, URL or pre-built vocabulary name.
+
+    Returns:
+        Vocab: An instance of tokenmonster.Vocab.
+
+    Usage:
+        vocab = tokenmonster.load_multiprocess_safe("english-32000-balanced-v1")
+    """
+    return Vocab(path, True)
+
 def new(yaml):
     """
     Creates a new vocabulary from a YAML string.
@@ -62,8 +78,10 @@ def new(yaml):
             raise ValueError("TokenMonster: Input to `tokenmonster.New()` must be a YAML string.")
     Vocab._set_local_directory()
     job_type = 18
-    response = Vocab._communicate(job_type, 0, len(yaml), yaml)
     vocab = Vocab.__new__(Vocab)
+    vocab._multiprocess = False
+    vocab.fname = None
+    response = vocab._communicate(job_type, 0, len(yaml), yaml)
     vocab._capcode = response[0]
     vocab._charset = response[1]
     vocab._normalization = response[2]
@@ -79,7 +97,6 @@ def new(yaml):
         vocab.encoding_length = 4
     else:
         vocab.encoding_length = 2
-    vocab.fname = None
     vocab.dictionary = None
     vocab._token_to_id = None
     vocab._modified_id = 0
@@ -111,7 +128,7 @@ class Vocab:
 
         def __init__(self, parent):
             self.parent = parent
-            self.id = Vocab._communicate(5, parent.id, 0)
+            self.id = parent._communicate(5, parent.id, 0)
             self._modified_id = parent._modified_id
             parent._decoders.append(self.id)
         
@@ -138,7 +155,7 @@ class Vocab:
                 decoded_string += decoder.decode(more_tokens)
             """
             if self.parent._modified_id != self._modified_id:
-                raise RuntimeError("Access denied to expired tokenmonster.Decoder instance.")
+                raise RuntimeError("Access denied to tokenmonster.DecoderInstance. The decoder instance has either expired, or it was not created by this multiprocessing thread.")
             if is_iterable(tokens):
                 if len(tokens) == 0:
                     return ''
@@ -150,17 +167,17 @@ class Vocab:
                 elif isinstance(tokens, (np.uint16, np.uint32)):
                     tokens = np.array([tokens])
                 else:
-                    raise ValueError("TokenMonster: Decoder decode accepts int or list of ints.")
+                    raise ValueError("TokenMonster: Decoder decode accepts int, list of ints or np.array.")
             payload = self.parent.serialize_tokens(tokens)
             job_type = self.parent.encoding_length + 5
-            response = Vocab._communicate(job_type, self.id, len(payload), payload)
+            response = self.parent._communicate(job_type, self.id, len(payload), payload)
             return self.parent._bytes_to_string(response)
         
         def _unload(self):
             if hasattr(self, 'id'):
                 if self.id is not None:
                     if self.parent._modified_id != -1:
-                        Vocab._communicate(6, self.id, 0)
+                        self.parent._communicate(6, self.id, 0)
         
         def __del__(self):
             try:
@@ -169,9 +186,9 @@ class Vocab:
             except AttributeError:
                 pass
 
-    def __init__(self, path):
+    def __init__(self, path, multiprocess_safe = False):
         Vocab._set_local_directory()
-        if not any(char in path for char in "./\\"):
+        if not any(char in path for char in "./\\"): # if its not a filename or URL
             if Vocab._file_exists(path + ".vocab"):
                 path = os.path.join(Vocab._dir, path + ".vocab")
             else:
@@ -186,7 +203,7 @@ class Vocab:
                             path = os.path.join(Vocab._dir, path)
                         else:
                             raise RuntimeError("TokenMonster: Unable to download the prebuilt vocabulary, please check availability at huggingface.co/alasdairforsythe/tokenmonster")
-        elif path.startswith("http://") or path.startswith("https://"):
+        elif path.startswith("http://") or path.startswith("https://"): # it's a URL
             fname = os.path.basename(path)
             if Vocab._file_exists(fname):
                 path = os.path.join(Vocab._dir, fname)
@@ -196,11 +213,12 @@ class Vocab:
                     path = os.path.join(Vocab._dir, fname)
                 else:
                     raise FileNotFoundError("TokenMonster: Unable to download " + path + " to " + Vocab._dir)
-        elif os.path.isfile(path):
-            pass
-        elif Vocab._file_exists(path):
+        elif os.path.isfile(path): # it's a local filepath relative to the working directory
+            if not os.path.isabs(path):
+                path = os.path.join(os.getcwd(), path)
+        elif Vocab._file_exists(path): # it's a local filepath relative to the _tokenmonster dir
             path = os.path.join(Vocab._dir, path)
-        elif Vocab._file_exists(path + ".vocab"):
+        elif Vocab._file_exists(path + ".vocab"): # it's a local filepath relative to the _tokenmonster dir without file extension
             path = os.path.join(Vocab._dir, path + ".vocab")
         else:
             raise FileNotFoundError("TokenMonster: Unable to locate " + path)
@@ -221,23 +239,24 @@ class Vocab:
         else:
             self.encoding_length = 2
         self.fname = path
-        path_encoded = path.encode("utf-8")
-        if len(path_encoded) > 255:
-            raise RuntimeError("TokenMonster: Vocabulary filepath is too long, it must be less than 256 characters")
-        payload = _write_uint8(len(path_encoded)) + path_encoded
-        self.id = Vocab._communicate(10, 0, len(payload), payload)
         self.dictionary = None
         self._token_to_id = None
         self._modified_id = 0
         self._decoders = []
+        self._multiprocess = multiprocess_safe
+        path_encoded = path.encode("utf-8")
+        if len(path_encoded) > 255:
+            raise RuntimeError("TokenMonster: Vocabulary filepath is too long, the absolute path must be less than 256 characters")
+        payload = _write_uint8(len(path_encoded)) + path_encoded
+        self.id = self._communicate(10, 0, len(payload), payload)
 
     def _unload(self):
         if hasattr(self, 'id'):
             if self.id is not None:
                 if self._modified_id != -1:
                     for _, decoder_id in enumerate(self._decoders):
-                        Vocab._communicate(6, decoder_id, 0)
-                    Vocab._communicate(11, self.id, 0)
+                        self._communicate(6, decoder_id, 0)
+                    self._communicate(11, self.id, 0)
 
     def __del__(self):
         try:
@@ -370,7 +389,7 @@ class Vocab:
         # Send
         job_type = self.encoding_length
         payload[0] = _write_uint32(batch_size)
-        response = Vocab._communicate(job_type, self.id, length, payload)
+        response = self._communicate(job_type, self.id, length, payload)
         batches_reply = _read_uint32(response[0:4])
         if batches_reply != batch_size:
             raise RuntimeError("TokenMonster: batch size from response differs from request")
@@ -444,7 +463,7 @@ class Vocab:
         # Send
         job_type = 1
         payload[0] = _write_uint32(batch_size)
-        response = Vocab._communicate(job_type, self.id, length, payload)
+        response = self._communicate(job_type, self.id, length, payload)
         batches_reply = _read_uint32(response[0:4])
         if batches_reply != batch_size:
             raise RuntimeError("TokenMonster: batch size of response differs from request")
@@ -518,7 +537,7 @@ class Vocab:
         # Send
         job_type = 20
         payload[0] = _write_uint32(batch_size)
-        response = Vocab._communicate(job_type, self.id, length, payload)
+        response = self._communicate(job_type, self.id, length, payload)
         batches_reply = _read_uint32(response[0:4])
         if batches_reply != batch_size:
             raise RuntimeError("TokenMonster: batch size of response differs from request")
@@ -559,7 +578,7 @@ class Vocab:
         if self._modified_id == -1:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         job_type = 15
-        response = Vocab._communicate(job_type, self.id, 0)
+        response = self._communicate(job_type, self.id, 0)
         size = _read_uint32(response[0:4])
         self.vocab_size = size # it should be already the same
         offset = 4
@@ -685,6 +704,8 @@ class Vocab:
             vocab.modify("<eos>", None, None, len(vocab))
         """
         # Parse and format the inputs
+        if self._multiprocess:
+            raise RuntimeError("TokenMonster: Vocabs loaded with load_multiprocess_safe cannot be modified. Please modify it first, save it, then load it with load_multiprocess_safe.")
         if self._modified_id == -1:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         add_special_tokens = self._format_list(add_special_tokens)
@@ -710,7 +731,7 @@ class Vocab:
             payload += _write_uint8(len(item)) + item
         payload += _write_uint32(resize)
         job_type = 14
-        self.vocab_size = Vocab._communicate(job_type, self.id, len(payload), payload)
+        self.vocab_size = self._communicate(job_type, self.id, len(payload), payload)
         self._modified()
         return self.vocab_size
     
@@ -732,10 +753,12 @@ class Vocab:
         Returns:
             int: The new size of the vocabulary.
         """
+        if self._multiprocess:
+            raise RuntimeError("TokenMonster: Vocabs loaded with load_multiprocess_safe cannot be modified. Please modify it first, save it, then load it with load_multiprocess_safe.")
         if self._modified_id == -1:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         job_type = 17
-        self.vocab_size = Vocab._communicate(job_type, self.id, len(yaml), yaml)
+        self.vocab_size = self._communicate(job_type, self.id, len(yaml), yaml)
         self._modified()
         return self.vocab_size
 
@@ -765,6 +788,8 @@ class Vocab:
         Returns:
             int: The new size of the vocabulary.
         """
+        if self._multiprocess:
+            raise RuntimeError("TokenMonster: Vocabs loaded with load_multiprocess_safe cannot be modified. You can load it normally, modify it, save it, then load the modified version with load_multiprocess_safe.")
         if self._modified_id == -1:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         if isinstance(id, int):
@@ -780,7 +805,7 @@ class Vocab:
                 raise ValueError("TokenMonster: Input to delete_token_by_id must be int or list of ints.")
         payload = _write_uint32(len(id)) + _pack_32bit_ints(id)
         job_type = 16
-        self.vocab_size = Vocab._communicate(job_type, self.id, len(payload), payload)
+        self.vocab_size = self._communicate(job_type, self.id, len(payload), payload)
         self._modified()
         return self.vocab_size
 
@@ -856,15 +881,19 @@ class Vocab:
         Usage:
             vocab.save("test.vocab")
         """
+        if self._multiprocess:
+            raise RuntimeError("TokenMonster: Vocabs loaded with load_multiprocess_safe cannot be saved.")
         if self._modified_id == -1:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         fname_encoded = fname.encode("utf-8")
         if len(fname_encoded) > 255:
             raise RuntimeError("TokenMonster: Vocabulary filepath is too long, it must be less than 256 characters")
         payload = _write_uint8(len(fname_encoded)) + fname_encoded
-        Vocab._communicate(12, 0, len(payload), payload)
+        self._communicate(12, 0, len(payload), payload)
 
     def export_yaml(self, order_by_score = False):
+        if self._multiprocess:
+            raise RuntimeError("TokenMonster: Vocabs loaded with load_multiprocess_safe cannot be exported.")
         """
         Exports the vocabulary as a YAML file, which is returned as a bytes string.
 
@@ -883,7 +912,7 @@ class Vocab:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         payload = _write_uint8(int(order_by_score))
         job_type = 19
-        return Vocab._communicate(job_type, self.id, 1, payload)
+        return self._communicate(job_type, self.id, 1, payload)
 
     def deserialize_tokens(self, binary_string):
         """
@@ -970,7 +999,7 @@ class Vocab:
             self.encoding_length = 2
         # Unload all the decoder objects
         for _, decoder_id in enumerate(self._decoders):
-            Vocab._communicate(6, decoder_id, 0)
+            self._communicate(6, decoder_id, 0)
         self._decoders = []
 
     @classmethod
@@ -1005,17 +1034,28 @@ class Vocab:
     def _file_exists(cls, fname):
         return os.path.exists(os.path.join(cls._dir, fname))
     
-    @classmethod
-    def _communicate(cls, job_type, id, data_length, data = None):
-        cls._connect()
-        cls._process.stdin.write(struct.pack('<BIQ', job_type, id, data_length)[0:12])
+    def _communicate(self, job_type, id, data_length, data = None):
+        if self._multiprocess:
+            if os.getpid() != Vocab._pid: # this is a folked child process
+                Vocab._process = None # don't use the parent's subprocess
+                Vocab._connect() # make a new connection to tokenmonsterserver
+                self._modified_id = Vocab._pid # invalidate decoder instances from parent
+                # Reload the vocabulary from file
+                path_encoded = self.fname.encode("utf-8")
+                payload = _write_uint8(len(path_encoded)) + path_encoded
+                self.id = self._communicate(10, 0, len(payload), payload)
+            else:
+                Vocab._connect()
+        else:
+            Vocab._connect()
+        Vocab._process.stdin.write(struct.pack('<BIQ', job_type, id, data_length)[0:12])
         if data is not None:
             if isinstance(data, bytes):
-                cls._process.stdin.write(data)
+                Vocab._process.stdin.write(data)
             else:
                 for item in data:
-                    cls._process.stdin.write(item)
-        cls._process.stdin.flush()
+                    Vocab._process.stdin.write(item)
+        Vocab._process.stdin.flush()
         response = Vocab._process.stdout.read(9)
         if len(response) == 0: # this happens when the app is shutting down
             return None
@@ -1048,9 +1088,10 @@ class Vocab:
     @classmethod
     def _start_process(cls):
         exe = os.path.join(cls._dir, cls._bin)
-        pid = str(os.getpid())
+        pid = os.getpid()
+        cls._pid = pid
         try:
-            cls._process = subprocess.Popen([exe, pid], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=cls._dir)
+            cls._process = subprocess.Popen([exe, str(pid)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=cls._dir)
         except Exception:
             cls._process = None
             return False
@@ -1082,6 +1123,13 @@ class Vocab:
             raise RuntimeError("\n"+sep+"\n\n\tTo get started with TokenMonster please enable execute permissions for:\n\t"+exe+"\n\n"+sep+"\n")
 
     @classmethod
+    def _tms_get_version(cls):
+        cls._process.stdin.write(struct.pack('<BIQ', 0, 0, 0)[0:12])
+        Vocab._process.stdin.flush()
+        response = Vocab._process.stdout.read(9)
+        return _read_uint32(response[1:5])
+
+    @classmethod
     def _connect(cls):
         if cls._process is None:
             for i in range(len(cls._vocabs)):
@@ -1093,11 +1141,11 @@ class Vocab:
             else:
                 cls._install_tokenmonsterserver()
             # Now check verison number
-            tms_version = cls._communicate(0, 0, 0)
+            tms_version = cls._tms_get_version()
             if tms_version < _TMS_VERSION_ID:
                 cls._disconnect()
                 cls._install_tokenmonsterserver()
-                tms_version = cls._communicate(0, 0, 0)
+                tms_version = cls._tms_get_version()
                 if tms_version < _TMS_VERSION_ID:
                     raise RuntimeError("TokenMonster: tokenmonsterserver version does not match Python library version")
             if tms_version > _TMS_VERSION_ID:
@@ -1118,6 +1166,7 @@ class Vocab:
     _os = None
     _bin = None
     _process = None
+    _pid = 0
     _vocabs = []
 
 

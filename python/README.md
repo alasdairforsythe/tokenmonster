@@ -35,15 +35,17 @@ It's possible to pass a token to the Decoder and get an empty string in response
 
 The Python library uses a subprocess called `tokenmonsterserver` which runs in the background to tokenize and decode, this is downloaded automatically the first time you use the library. The `tokenmonsterserver` file is located in the tokenmonster directory, which is `~/_tokenmonster` by default, but you can set it elsewhere with the `TokenMonster.set_local_directory` function before loading the first vocabulary.
 
-### Multithreading
+### Multiprocessing
 
-To tokenize a batch in parallel, you can pass a list of strings to `tokenize` and they will be tokenized in parallel by `tokenmonsterserver` and returned together. However, multithreading within Python, for example with Hugging Face `datasets` `.map(num_proc=8)` or similar is **not currently supported** and will result in an error. I will implement a clean solution for multithreaded access in the near future, but for now, use batches instead of Python multithreading.
+Some libraries (e.g. Hugging Face Datasets) use `multiprocessing` to tokenize/decode in parallel. When doing this you need to use `tokenmonster.load_multiprocess_safe()` instead of `tokenmonster.load()`, or you will receive an error. It is, however, more efficient to batch tokenize/decode by passing a list of strings to the `tokenize` function, which will be tokenized in parallel. Tokenizing by batch is more efficient because there is less overhead.
 
 .
 ## Full Documentation
+
 1. [Usage](#usage)
 2. Loading & Exporting
     - [tokenmonster.load(path)](#tokenmonsterloadpath)
+    - [tokenmonster.load_multiprocess_safe(path)](#tokenmonsterload_multiprocess_safepath)
     - [tokenmonster.new(yaml)](#tokenmonsternewyaml)
     - [vocab.save(fname)](#vocabsavefname)
     - [vocab.export_yaml(order_by_score=False)](#vocabexport_yamlorder_by_scorefalse)
@@ -94,6 +96,25 @@ decoded_string = vocab.decode(tokens)
 ### tokenmonster.load(path)
 
 Loads a TokenMonster vocabulary from file, URL or by name.
+
+#### Parameters
+
+- `path` (string): A filepath, URL or pre-built vocabulary name.
+
+#### Returns
+
+- `Vocab`: An instance of tokenmonster.Vocab.
+
+#### Usage
+
+```python
+vocab = tokenmonster.load("english-32000-balanced-v1")
+```
+
+### tokenmonster.load_multiprocess_safe(path)
+
+Loads a TokenMonster vocabulary from file, URL or by name.
+It's safe for multiprocessing, but vocabulary modification is disabled and tokenization is slightly slower.
 
 #### Parameters
 
