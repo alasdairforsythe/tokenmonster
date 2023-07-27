@@ -546,7 +546,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 		if asset.testVocab.Reset() {
 			var token []byte
 			var r rune
-			var s string
+			var s, last string
 			add := string(capcode.DeleteToken) + " "
 			if usingCapcode == 1 {
 				add = string(capcode.NoCapcodeDeleteToken) + " "
@@ -556,6 +556,10 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 				keys[index] = token
 				testVocab.Add(token)
 				s = string(token)
+				if s == last {
+					panic(errors.New(`Duplicate token detected in vocabulary: ` + s))
+				}
+				last = s
 				idsmap[s] = index
 				r, _ = decodeRune(token)
 				if usingCapcode != 0 && isAlphaNum(r) {
@@ -1743,12 +1747,14 @@ func main() {
 						if len(tok) > 2 {
 							r, _ = decodeRune(tok[2:])
 							if isAlphaNum(r) {
-								tok = tok[2:]
+								tok = tok[2:] // possibly becomes 1 character or even 0 characters, therefore check again below
 							}
 						}
 					}
 				}
-				uniqueTokens.Add(tok, 1)
+				if len(tok) > 1 {
+					uniqueTokens.Add(tok, 1)
+				}
 			}
 		}
 		uniqueTokens.Build()
@@ -2255,8 +2261,10 @@ func main() {
 					}
 					if !exists { // if not already seen
 						channelWork <- workStruct{testVocab, 0, false} // send the dictionary to the worker channel
-						vocabsTried[hash] = true
 						atLeast1UniqueVocab = true
+						if withinVocabX2 {
+							vocabsTried[hash] = true
+						}
 					}
 				}
 			}

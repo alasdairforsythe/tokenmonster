@@ -982,7 +982,7 @@ func (vocab *Vocab) TokenizeToSerialized(data []byte, encodingLength uint8, buff
 		return []byte{}, 2, 0, nil
 	}
 	if encodingLength <= 1 {
-		if len(vocab.info) <= 65536 {
+		if len(vocab.reverse) <= 65536 {
 			encodingLength = 2
 		} else {
 			encodingLength = 3
@@ -2583,6 +2583,11 @@ func (vocab *Vocab) NumDeletedTokens() int {
 // Returns the uint8 code corresponding to the training parameters for single byte tokens.
 func (vocab *Vocab) SingleBytesTrainingCode() uint8 {
 	return vocab.reserve
+}
+
+// Returns the value of the highest token ID.
+func (vocab *Vocab) HighestTokenID() int {
+	return len(vocab.reverse) - 1
 }
 
 // --------- LOADING AND SAVING ---------

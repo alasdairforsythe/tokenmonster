@@ -75,7 +75,7 @@ def new(yaml):
         if isinstance(yaml, str):
             yaml = yaml.encode('utf-8')
         else:
-            raise ValueError("TokenMonster: Input to `tokenmonster.New()` must be a YAML string.")
+            raise ValueError("TokenMonster: Input to `tokenmonster.new()` must be a YAML string.")
     Vocab._set_local_directory()
     job_type = 18
     vocab = Vocab.__new__(Vocab)
@@ -89,11 +89,12 @@ def new(yaml):
     vocab.vocab_size = _read_uint32(response[4:8])
     vocab.id = _read_uint32(response[8:12])
     unk = _read_uint32(response[12:16])
+    vocab._highest_token_id_plus_one = _read_uint32(response[16:20])
     if unk == 16777215:
         vocab.unk = None
     else:
          vocab.unk = unk
-    if vocab.vocab_size > 65536:
+    if vocab._highest_token_id_plus_one > 65536:
         vocab.encoding_length = 4
     else:
         vocab.encoding_length = 2
@@ -224,17 +225,18 @@ class Vocab:
             raise FileNotFoundError("TokenMonster: Unable to locate " + path)
         # Now read the vocabulary header
         with open(path, 'rb') as file:
-            vocab_header = file.read(14)
+            vocab_header = file.read(17)
         self._capcode = vocab_header[0]
         self._charset = vocab_header[1]
         self._normalization = vocab_header[2]
         self._mode = vocab_header[3]
         unk = vocab_header[8] | (vocab_header[9] << 8) | (vocab_header[10] << 16)
         self.vocab_size = vocab_header[11] | (vocab_header[12] << 8) | (vocab_header[13] << 16)
-        self.Unk = None
+        self._highest_token_id_plus_one = vocab_header[14] | (vocab_header[15] << 8) | (vocab_header[16] << 16)
+        self.unk = None
         if unk != 16777215:
-            self.Unk = unk
-        if self.vocab_size > 65536:
+            self.unk = unk
+        if self._highest_token_id_plus_one > 65536:
             self.encoding_length = 4
         else:
             self.encoding_length = 2
@@ -731,7 +733,7 @@ class Vocab:
             payload += _write_uint8(len(item)) + item
         payload += _write_uint32(resize)
         job_type = 14
-        self.vocab_size = self._communicate(job_type, self.id, len(payload), payload)
+        self.vocab_size, self._highest_token_id_plus_one = self._communicate(job_type, self.id, len(payload), payload)
         self._modified()
         return self.vocab_size
     
@@ -758,7 +760,7 @@ class Vocab:
         if self._modified_id == -1:
             raise RuntimeError("TokenMonster: Access denied to expired Vocab instance.")
         job_type = 17
-        self.vocab_size = self._communicate(job_type, self.id, len(yaml), yaml)
+        self.vocab_size, self._highest_token_id_plus_one = self._communicate(job_type, self.id, len(yaml), yaml)
         self._modified()
         return self.vocab_size
 
@@ -805,7 +807,7 @@ class Vocab:
                 raise ValueError("TokenMonster: Input to delete_token_by_id must be int or list of ints.")
         payload = _write_uint32(len(id)) + _pack_32bit_ints(id)
         job_type = 16
-        self.vocab_size = self._communicate(job_type, self.id, len(payload), payload)
+        self.vocab_size, self._highest_token_id_plus_one = self._communicate(job_type, self.id, len(payload), payload)
         self._modified()
         return self.vocab_size
 
@@ -868,9 +870,6 @@ class Vocab:
     def save(self, fname):
         """
         Saves the current vocabulary to a file.
-
-        The default directory is not the current working directory but is the TokenMonster default directory.
-        Specify full filepath if you intend to save elsewhere.
 
         Parameters:
             filename (string): The filename to save the vocabulary to.
@@ -937,8 +936,8 @@ class Vocab:
             return _pack_16bit_ints(integer_list)
         elif self.encoding_length == 4:
             return _pack_32bit_ints(integer_list)
-        elif self.encoding_length == 3:
-            return _pack_24bit_ints(integer_list)
+        #elif self.encoding_length == 3:
+        #    return _pack_24bit_ints(integer_list)
         else:
             raise RuntimeError("TokenMonster: Invalid encoding length")
     
@@ -993,7 +992,7 @@ class Vocab:
         self.dictionary = None
         self._token_to_id = None
         self.unk = False
-        if self.vocab_size > 65536:
+        if self._highest_token_id_plus_one > 65536:
             self.encoding_length = 4
         else:
             self.encoding_length = 2
@@ -1068,6 +1067,10 @@ class Vocab:
             return id
         elif status == 2: # HEADER_IS_EMPTY
             return None
+        elif status == 3: # HEADER_IS_2VAL
+            a = _read_uint32(response[1:5])
+            b = _read_uint32(response[5:9])
+            return a, b
         elif status == 10: # ERROR_ID_DOES_NOT_EXIST
             raise RuntimeError("tokenmonsterserver: This ID does not exist")
         elif status == 11: # ERROR_ID_IS_UNLOADED
@@ -1083,7 +1086,7 @@ class Vocab:
         elif status == 16: # ERROR_INVALID_JOB
             raise ValueError("TokenMonster: YAML is invalid")
         else:
-            raise RuntimeError("tokenmonsterserver: Data corruption. TokenMonster does not currently supported multithreading, use batches instead.")
+            raise RuntimeError("tokenmonsterserver: Data corruption. If you are using multiprocessing, you must load the vocabulary with `load_multiprocess_safe`.")
 
     @classmethod
     def _start_process(cls):
@@ -1091,7 +1094,7 @@ class Vocab:
         pid = os.getpid()
         cls._pid = pid
         try:
-            cls._process = subprocess.Popen([exe, str(pid)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, cwd=cls._dir)
+            cls._process = subprocess.Popen([exe, str(pid)], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         except Exception:
             cls._process = None
             return False
@@ -1150,7 +1153,7 @@ class Vocab:
                     raise RuntimeError("TokenMonster: tokenmonsterserver version does not match Python library version")
             if tms_version > _TMS_VERSION_ID:
                 cls.disconnect()
-                raise RuntimeError("TokenMonster: Version mismatch. Please update tokenmonster with `pip install --upgrade`")
+                raise RuntimeError("TokenMonster: Version mismatch. Please upgrade tokenmonster with `pip install --upgrade tokenmonster`")
 
     #@classmethod
     #def _reconnect(cls):
@@ -1295,4 +1298,4 @@ def is_int(obj):
     return False
 
 _TOKENMONSTER_URL = "https://huggingface.co/alasdairforsythe/tokenmonster/resolve/main/"
-_TMS_VERSION_ID = 2
+_TMS_VERSION_ID = 3

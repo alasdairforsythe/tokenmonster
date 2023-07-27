@@ -39,6 +39,7 @@ const ( // status codes
 	HEADER_IS_LENGTH = 0
 	HEADER_IS_ID = 1
 	HEADER_IS_EMPTY = 2
+	HEADER_IS_2VAL = 3
 	ERROR_ID_DOES_NOT_EXIST = 10
 	ERROR_ID_IS_UNLOADED = 11
 	ERROR_FILE_CANNOT_OPEN = 12
@@ -46,7 +47,7 @@ const ( // status codes
 	ERROR_READ_FAILED = 14
 	ERROR_INVALID_JOB = 15
 	ERROR_YAML_INVALID = 16
-	VERSION = 2
+	VERSION = 3
 )
 
 type work struct {
@@ -552,7 +553,7 @@ func main() {
 				os.Stdout.Write(header9)
 
 			case 14: // Modify vocab
-				statusCode = HEADER_IS_ID
+				statusCode = HEADER_IS_2VAL
 				if id >= uint32(len(vocabs)) {
 					sendError(ERROR_ID_DOES_NOT_EXIST) // vocab ID does not exist
 					continue
@@ -612,9 +613,12 @@ func main() {
 				// Read "resize"
 				resize := int(readUint32(data))
 				// Do the modification
-				vocab.PrivateGenerateVocab(nil, nil, nil, toAdd, toDelete, toAddSpecial, nil, 0, ``, 0, 0, 0, resize, resetTokenIds)
+				if len(toAdd) > 0 || len(toDelete) > 0 || len(toAddSpecial) > 0 || resize > 0 || resetTokenIds {
+					vocab.PrivateGenerateVocab(nil, nil, nil, toAdd, toDelete, toAddSpecial, nil, 0, ``, 0, 0, 0, resize, resetTokenIds)
+				}
 				header9[0] = statusCode
 				writeUint32(header9[1:], uint32(vocab.Len()))
+				writeUint32(header9[5:], uint32(vocab.HighestTokenID() + 1))
 				os.Stdout.Write(header9)
 
 			case 15: // Get detailed info
@@ -650,7 +654,7 @@ func main() {
 				}
 
 			case 16: // Delete tokens by ID
-				statusCode = HEADER_IS_ID
+				statusCode = HEADER_IS_2VAL
 				if id >= uint32(len(vocabs)) {
 					sendError(ERROR_ID_DOES_NOT_EXIST)
 					continue
@@ -670,10 +674,11 @@ func main() {
 				vocabs[id] = vocab
 				header9[0] = statusCode
 				writeUint32(header9[1:], uint32(vocab.Len()))
+				writeUint32(header9[5:], uint32(vocab.HighestTokenID() + 1))
 				os.Stdout.Write(header9)
 
 			case 17: // Modify by YAML
-				statusCode = HEADER_IS_ID
+				statusCode = HEADER_IS_2VAL
 				if id >= uint32(len(vocabs)) {
 					sendError(ERROR_ID_DOES_NOT_EXIST)
 					continue
@@ -691,6 +696,7 @@ func main() {
 				}
 				header9[0] = statusCode
 				writeUint32(header9[1:], uint32(vocab.Len()))
+				writeUint32(header9[5:], uint32(vocab.HighestTokenID() + 1))
 				os.Stdout.Write(header9)
 
 			case 18: // New Vocab From YAML
@@ -710,9 +716,9 @@ func main() {
 						vocabs[id] = vocab
 					}
 					header9[0] = statusCode
-					writeUint64(header9[1:], 16)
+					writeUint64(header9[1:], 20)
 					os.Stdout.Write(header9)
-					temp := make([]byte, 16)
+					temp := make([]byte, 20)
 					temp[0] = vocab.Capcode()
 					temp[1] = vocab.Charset()
 					temp[2] = vocab.NormalizationCode()
@@ -720,6 +726,7 @@ func main() {
 					writeUint32(temp[4:], uint32(vocab.Len()))
 					writeUint32(temp[8:], id)
 					writeUint32(temp[12:], vocab.Unk())
+					writeUint32(temp[16:], uint32(vocab.HighestTokenID() + 1))
 					os.Stdout.Write(temp)
 				}
 
@@ -735,6 +742,7 @@ func main() {
 					continue
 				}
 				w := bytes.NewBuffer(writeBuffer)
+				w.Reset()
 				vocab.ExportYAML(w, data[0] == 1)
 				header9[0] = statusCode
 				writeUint64(header9[1:], uint64(w.Len()))

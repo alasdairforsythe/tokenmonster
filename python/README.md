@@ -155,9 +155,6 @@ vocab.save(filename)
 
 Saves the current vocabulary to a file.
 
-The working directory is not the Python working directory but the TokenMonster default directory.
-Specify full filepath if you intend to save elsewhere.
-
 #### Parameters
 
 - `fname` (string): The filename to save the vocabulary to.
