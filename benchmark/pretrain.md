@@ -111,7 +111,7 @@ None of these models were trained to convergence, which in plain English means t
 
 8. Comparing "consistent" and "balanced" vocabularies, it appears that "consistent" vocabularies perform slightly better on SMLQA (Ground Truth) benchmark, but considerably worse on SQuAD (Information Extraction) benchmark. Although more data is needed to confirm this.
 
-<img width="716" alt="chrtok_vs_valloss" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/223090e7-8b89-41b4-a734-c4f1f2dcadec">
+<img width="745" alt="chrtokvsvalloss" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/8cce420d-56d2-4474-9861-72a9fc2c3296">
 
 ## MEDIUM (16 heads, 24 layers)
 
