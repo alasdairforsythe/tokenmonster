@@ -89,6 +89,7 @@ var (
 	onlyLatin bool
 	onlyValid bool
 	normFlag string
+	wordsPerToken int
 )
 
 type workStruct struct {
@@ -641,6 +642,25 @@ func filterConsistent(tok []byte) ([]byte, bool) {
 
 	r1, n1 = decodeRune(tok)
 	if len(tok) > n1 {
+		// Check words per token
+		if wordsPerToken > 0 {
+			var inSpace bool = true
+			var nSpace int
+			for i := n1; i < len(tok); i += n3 {
+				r3, n3 = decodeRune(tok[i:])
+				if unicode.IsSpace(r3) {
+					if !inSpace {
+						inSpace = true
+						nSpace++
+						if nSpace >= wordsPerToken {
+							return trimmed, false
+						}
+					}
+				} else {
+					inSpace = false
+				}
+			}
+		}
 		r2, n2 = decodeRune(tok[n1:])
 	} else {
 		return trimmed, true // it's a single multi-byte character
@@ -896,6 +916,25 @@ func filterStrict(tok []byte) ([]byte, bool) {
 
 	r1, n1 = decodeRune(tok)
 	if len(tok) > n1 {
+		// Check words per token
+		if wordsPerToken > 0 {
+			var inSpace bool = true
+			var nSpace int
+			for i := n1; i < len(tok); i += n3 {
+				r3, n3 = decodeRune(tok[i:])
+				if unicode.IsSpace(r3) {
+					if !inSpace {
+						inSpace = true
+						nSpace++
+						if nSpace >= wordsPerToken {
+							return trimmed, false
+						}
+					}
+				} else {
+					inSpace = false
+				}
+			}
+		}
 		r2, n2 = decodeRune(tok[n1:])
 	} else {
 		return trimmed, true // it's a single multi-byte character
@@ -1588,6 +1627,7 @@ func main() {
 	flag.BoolVar(&onlyValid, "only-valid", onlyValid, "if enabled, tokens must contain full and valid characters, except single byte tokens (default false)")
 	flag.IntVar(&minOccurSingles, "min-occur-byte", minOccurSingles, "single bytes will be trimmed if they occur less frequently than this in the dataset (default min-occur)")
 	flag.StringVar(&levelFlag, "mode", levelFlag, "0 = unfiltered, 1 = clean, 2 = balanced, 3 = consistent, 4 = strict (required)")
+	flag.IntVar(&wordsPerToken, "words-per-token", wordsPerToken, "maximum number of words that can be in a single token (default unlimited)")
 	flag.Parse()
 	flagRequired("dataset", datasetFilename)
 	flagRequired("output", saveFilename)
@@ -1750,6 +1790,13 @@ func main() {
 	if level >= 3 && usingCapcode == 0 {
 		fmt.Fprintf(os.Stderr, "EXITING: Optimization modes 'consistent' and 'strict' require capcode level 1 or 2\n")
 		os.Exit(1)
+	}
+	if wordsPerToken > 0 {
+		if level < 3 {
+			fmt.Fprintf(os.Stderr, "EXITING: words-per-token parameter is currently only implemented for optimization modes 'consistent' and 'strict'\n")
+			os.Exit(1)
+		}
+		fmt.Println(`Maximum words per token:`, wordsPerToken)
 	}
 	if onlyLatin {
 		fmt.Println(`Only Latin script allowed`)
