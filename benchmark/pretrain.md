@@ -132,4 +132,8 @@ After 560,000 iterations all the models begin to converge, as you can see in thi
 
 <img width="908" alt="medium-50256-consistent-wandb" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/a0de00b5-540a-4199-89f7-a9ae85f02424">
 
+### What Next?
+
+The next stage would be to train and benchmark a MEDIUM model using `englishcode-32000-consistent` vocabulary with 80% one-word tokens and 20% multi-word tokens. This will either confirm or refute the predictions I've made above.
+
 .
