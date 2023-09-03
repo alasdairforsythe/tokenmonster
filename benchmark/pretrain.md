@@ -6,7 +6,7 @@ The pretraining phase alone for all 16 models took a cumulative 147 days on 8x G
 
 ## Summary of Findings
 
-- Comparable TokenMonster vocabularies perform better than both GPT-2 Tokenizer and tiktoken p50k_base in all areas.
+- Comparable (`50256-strict-nocapcode`) TokenMonster vocabularies perform better than both GPT-2 Tokenizer and tiktoken p50k_base on all metrics.
 - Optimal vocabulary size is 32,000.
 - Simpler vocabularies converge faster but do not necessarily produce better results.
 - Higher compression (more chr/tok) does not negatively affect model quality alone.
@@ -61,7 +61,7 @@ It's worth noting that the reference tokenizers `GPT-2 Tokenizer` and `p50k_base
 
 As you can see, the one-word vocabularies perform slightly better than multiple words per token, which is the default for TokenMonster vocabularies.
 
-Another important observation is that the vocabulary size directly affects the Ground Truth when the vocabulary size is below 32,000, even when the `n_embd` parameter of the model is adjusted to make up for the reduced size of the model. This to me was unintuitive, as I had expected `16000-balanced` with `n_embd 864` (121.34M parameters) and `8000-consistent` with `n_embd 900` (123.86M parameters) to do better than `50256-consistent` with `n_embd 768` (123.59M), but that was not the case — both performed considerably worse (13.7 & 15.1 vs. 16.4 for  `50256-consistent`). However, both of those 'adjusted' models were trained for the same wall time, which happened to result in pretraining for significantly fewer epochs (albeit in the same amount of time.)
+Another important observation is that the vocabulary size directly affects the Ground Truth when the vocabulary size is below 32,000, even when the `n_embd` parameter of the model is adjusted to make up for the reduced size of the model. This to me was counter intuitive, as I had expected `16000-balanced` with `n_embd 864` (121.34M parameters) and `8000-consistent` with `n_embd 900` (123.86M parameters) to do better than `50256-consistent` with `n_embd 768` (123.59M), but that was not the case — both performed considerably worse (13.7 & 15.1 vs. 16.4 for  `50256-consistent`). However, both of those 'adjusted' models were trained for the same wall time, which happened to result in pretraining for significantly fewer epochs (albeit in the same amount of time.)
 
 ## SMALL (12 heads, 12 layers)
 
