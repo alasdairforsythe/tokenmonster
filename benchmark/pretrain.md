@@ -21,7 +21,7 @@ To elaborate on the "flaws and complications in the tokenizer have a much greate
 
 ### Discussion on Vocab Size
 
-Before running these tests I believed that 32,000 is the optimal vocabulary size, and the results confirm the same. `50256-balanced` performs only 1% better than `32000-balanced` on SMLQA (Ground Truth). Ideally I would like to prove this definitively by testing MEDIUM models of 80/20 vocabularies as discussed above in vocab sizes 24000, 32000, 50256 & 100256.
+Before running these tests I believed that 32,000 is the optimal vocabulary size, and the results confirm the same. `50256-balanced` performs only 1% better than `32000-balanced` on SMLQA (Ground Truth) despite the model being 13% larger in size. Ideally I would like to prove this definitively by testing MEDIUM models of 80/20 vocabularies as discussed above in vocab sizes 24000, 32000, 50256 & 100256.
 
 ### Discussion on Optimization Mode
 
