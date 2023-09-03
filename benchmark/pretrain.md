@@ -8,7 +8,7 @@ The pretraining phase alone for all 16 models took a cumulative 147 days on 8x G
 
 - Comparable (`50256-strict-nocapcode`) TokenMonster vocabularies perform better than both GPT-2 Tokenizer and tiktoken p50k_base on all metrics.
 - Optimal vocabulary size is 32,000.
-- Simpler vocabularies converge faster but do not necessarily produce better results.
+- Simpler vocabularies converge faster but do not necessarily produce better results when converged.
 - Higher compression (more chr/tok) does not negatively affect model quality alone.
 - Vocabularies with multiple words per token have a 5% negative impact on SMLQA (Ground Truth) benchmark, but a 13% better chr/tok compression.
 - Capcode takes longer to learn, but once the model has converged, does not appear to affect SMLQA (Ground Truth) or SQuAD (Data Extraction) benchmarks significantly in either direction.
