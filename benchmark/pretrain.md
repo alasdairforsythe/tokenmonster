@@ -1,24 +1,27 @@
 # Pretraining 16 language models on different tokenizers
 
-To examine the impact of varying vocabularies on language models, I pretrained and subsequently finetuned 16 models with distinct vocabularies. I trained 12 models using the NanoGPT SMALL architecture (based on GPT-2 SMALL), which consists of 12 attention heads, 12 layers, and an n_embd of 768, for approximately 400,000 iterations (or about 10 epochs). I trained 4 models on the GPT-2 MEDIUM setup, featuring 16 attention heads, 24 layers, and an n_embd of 1024, running for 600,000 iterations. All models were pretrained using [NanoGPT](https://github.com/karpathy/nanoGPT) and the OpenWebText dataset. For finetuning, I employed the instruct dataset from [baize-chatbot](https://github.com/project-baize/baize-chatbot/tree/main/data), supplemented with an additional 20,000 and 500,000 synthetically produced "dictionary" entries. In the near future, I plan to release the code, pretrained models, instruct tuned models, and the finetuning dataset.
+To examine the impact of varying vocabularies on language models, I pretrained and subsequently finetuned 16 models with distinct vocabularies. I trained 12 models using the [NanoGPT](https://github.com/karpathy/nanoGPT) SMALL architecture (based on GPT-2 SMALL), which consists of 12 attention heads, 12 layers, and an n_embd of 768, for approximately 400,000 iterations (or about 10 epochs). I trained 4 models on the GPT-2 MEDIUM setup, featuring 16 attention heads, 24 layers, and an n_embd of 1024, running for 600,000 iterations. All models were pretrained using NanoGPT and the OpenWebText dataset. For finetuning, I employed the instruct dataset from [baize-chatbot](https://github.com/project-baize/baize-chatbot/tree/main/data), supplemented with an additional 20,000 and 500,000 synthetically produced "dictionary" entries. In the near future, I plan to release the code, pretrained models, instruct tuned models, and the finetuning dataset.
 
 The pretraining phase alone for all 16 models took a cumulative 147 days on 8x GPUs (equivalent to 1,176 GPU days) and cost $8,000. I don't have a GPU sponsor (and this is a free, open-source project) so that $8,000 came from my own pocket, which explains why I haven't done, and probably won't be doing, more tests on any inconclusive results.
 
 ## Summary of Findings
 
-- Comparable TokenMonster vocabularies perform better than both GPT-2 Tokenizer and tiktoken p50k_base in all areas.
+- Comparable (`50256-strict-nocapcode`) TokenMonster vocabularies perform better than both GPT-2 Tokenizer and tiktoken p50k_base on all metrics.
 - Optimal vocabulary size is 32,000.
-- Simpler vocabularies converge faster but do not necessarily produce better results.
+- Simpler vocabularies converge faster but do not necessarily produce better results when converged.
 - Higher compression (more chr/tok) does not negatively affect model quality alone.
 - Vocabularies with multiple words per token have a 5% negative impact on SMLQA (Ground Truth) benchmark, but a 13% better chr/tok compression.
 - Capcode takes longer to learn, but once the model has converged, does not appear to affect SMLQA (Ground Truth) or SQuAD (Data Extraction) benchmarks significantly in either direction.
 - Validation loss and F1 score are both meaningless metrics when comparing different tokenizers.
+- Flaws and complications in the tokenizer affect the model's ability to learn facts more than they affect its linguistic capability.
 
-Based on the results, the recommended vocabulary is `englishcode-32000-consistent`. However, as mentioned above there is currently a tradeoff between the Ground Truth accuracy of the model and the compression ratio, which is controlled by limiting the number of words per token in the vocabulary. I strongly believe that this tradeoff can be minimized and a "best of both" vocabulary achieved by forcing 80% of the vocabulary to be one-word and 20% to be multi-word. This approach would, according to my predictions, perform equally in quality to the one-word vocabulary, while still realizing around 50% of the benefits in chr/tok from multi-word vocabularies.
+Based on the results, the recommended vocabulary is `englishcode-32000-consistent`. However, as mentioned above there is currently a tradeoff between the SMLQA Ground Truth accuracy of the model and the compression ratio when using the default TokenMonster setting of allowing for multiple words to be included in a single token, which increases the learning curve. I strongly believe that this tradeoff can be minimized and a "best of both" vocabulary achieved by forcing 80% of the vocabulary to be one-word and 20% to be multi-word. I hypothesize that this approach would perform equally in quality to the one-word vocabulary, while still realizing around 50% of the benefits in chr/tok from multi-word vocabularies.
+
+To elaborate on the *"flaws and complications in the tokenizer affect the model's ability to learn facts more than they affect its linguistic capability"*: it's an interesting feature of the training process, and also makes sense when you consider how the training works. I don't have proof for my reasoning other than it makes perfect sense. Essentially, because the pattern of linguistic fluency is more obvious to correct during backpropagation vs. linguistic facts (which are extremely nuanced and context-dependent), this means that any improvement made in the efficiency of the tokenizer, that has in itself nothing to do with truthfulness, has the knock-on effect of directly translating into improved fidelity of information, as seen in the SMLQA (Ground Truth) benchmark. To put it simply: a better tokenizer = a more truthful model, but not necessarily a more fluent model. To say that the other way around: a model with an inefficient tokenizer still learns to write eloquently, but the additional cost of fluency has a downstream effect of reducing the trustfulness of the model.
 
 ### Discussion on Vocab Size
 
-Before running these tests I believed that 32,000 is the optimal vocabulary size, and the results confirm the same. `50256-balanced` performs only 1% better than `32000-balanced` on SMLQA (Ground Truth). To be honest, it's quite obvious intuitively when you spend a lot of time staring at vocabulary lists: somewhere around the 32,000 point the tokens being allocated are increasingly likely to be misspellings and other junk instead of real words. 32,000 is the vocabulary of fairly well-educated person. All this considered, I'm very confident in the 32,000 figure.
+Before running these tests I believed that 32,000 is the optimal vocabulary size, and the results confirm the same. `50256-balanced` performs only 1% better than `32000-balanced` on SMLQA (Ground Truth) despite the model being 13% larger in size. Ideally I would like to prove this definitively by testing MEDIUM models of 80/20 vocabularies as discussed above in vocab sizes 24000, 32000, 50256 & 100256.
 
 ### Discussion on Optimization Mode
 
@@ -58,7 +61,7 @@ It's worth noting that the reference tokenizers `GPT-2 Tokenizer` and `p50k_base
 
 As you can see, the one-word vocabularies perform slightly better than multiple words per token, which is the default for TokenMonster vocabularies.
 
-Another important observation is that the vocabulary size directly affects the Ground Truth when the vocabulary size is below 32,000, even when the `n_embd` parameter of the model is adjusted to make up for the reduced size of the model. This to me was unintuitive, as I had expected `16000-balanced` with `n_embd 864` (121.34M parameters) and `8000-consistent` with `n_embd 900` (123.86M parameters) to do better than `50256-consistent` with `n_embd 768` (123.59M), but that was not the case — both performed considerably worse (13.7 & 15.1 vs. 16.4 for  `50256-consistent`). However, both of those 'adjusted' models were trained for the same wall time, which happened to result in pretraining for significantly fewer epochs (albeit in the same amount of time.)
+Another important observation is that the vocabulary size directly affects the Ground Truth when the vocabulary size is below 32,000, even when the `n_embd` parameter of the model is adjusted to make up for the reduced size of the model. This to me was counter intuitive, as I had expected `16000-balanced` with `n_embd 864` (121.34M parameters) and `8000-consistent` with `n_embd 900` (123.86M parameters) to do better than `50256-consistent` with `n_embd 768` (123.59M), but that was not the case — both performed considerably worse (13.7 & 15.1 vs. 16.4 for  `50256-consistent`). However, both of those 'adjusted' models were trained for the same wall time, which happened to result in pretraining for significantly fewer epochs (albeit in the same amount of time.)
 
 ## SMALL (12 heads, 12 layers)
 
@@ -131,5 +134,9 @@ Having the models trained to convergence did significantly reduce the performanc
 After 560,000 iterations all the models begin to converge, as you can see in this chart from the wandb logs from `50256-consistent`:
 
 <img width="908" alt="medium-50256-consistent-wandb" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/a0de00b5-540a-4199-89f7-a9ae85f02424">
+
+### What Next?
+
+The next stage would be to train and benchmark a MEDIUM model using `englishcode-32000-consistent` vocabulary with 80% one-word tokens and 20% multi-word tokens. This will either confirm or refute the predictions I've made above.
 
 .

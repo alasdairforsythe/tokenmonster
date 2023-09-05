@@ -1,5 +1,7 @@
 # TokenMonster
 
+**UPDATE:** [Benchmark results from pretraining 16 language models on different tokenizers.](./benchmark/pretrain.md)
+
 TokenMonster is an ungreedy subword tokenizer and vocabulary generator, enabling language models to run faster, cheaper, smarter and generate longer streams of text.
 
 <img width="661" alt="tokenmonster" src="https://github.com/alasdairforsythe/tokenmonster/assets/77910352/1136330a-bf25-4a17-8edb-06b90fffb236">

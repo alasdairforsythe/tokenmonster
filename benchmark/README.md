@@ -1,10 +1,14 @@
-## Performance (Tokenization)
+## Benchmark (Model Quality / Ground Truth)
+
+[Click here for the results of pretraining 16 language models on different tokenizers](pretrain.md) including TokenMonster, GPT-2 & tiktoken p50k_base.
+
+## Benchmark Performance (Tokenization)
 
 [Click here for an interactive benchmark](https://bot.co/tokenmonster/benchmark.html) for all pretrained vocabularies, plus LLaMa Tokenizer, GPT2 Tokenizer, and tiktoken.
 
 [Click here for a chart comparing optimization mode, chr/tok and vocab size](https://bot.co/tokenmonster/line.html) for all TokenMonster vocabularies.
 
-## Performance (Speed)
+## Benchmark Performance (Speed)
 
 ### Single threaded performance
 
