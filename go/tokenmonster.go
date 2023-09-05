@@ -485,11 +485,11 @@ func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte
 			}
 		}
 		reverse := d.vocab.reverse
-		nTokens := uint16(len(reverse))
+		nTokens := uint16(len(reverse) - 1)
 		var i int
 		if d.vocab.charset == 0 {
 			for _, v := range tokens {
-				if v < nTokens {
+				if v <= nTokens {
 					i += len(reverse[v])
 				}
 			}
@@ -502,7 +502,7 @@ func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte
 			// Copy the keys into it
 			i = 0
 			for _, v := range tokens {
-				if v < nTokens {
+				if v <= nTokens {
 					copy(buffer[i:], reverse[v])
 					i += len(reverse[v])
 				}
@@ -512,7 +512,7 @@ func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte
 		// Get the size
 		i = len(d.remainder)
 		for _, v := range tokens {
-			if v < nTokens {
+			if v <= nTokens {
 				i += len(reverse[v])
 			}
 		}
@@ -526,7 +526,7 @@ func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte
 		copy(buffer, d.remainder)
 		i = len(d.remainder)
 		for _, v := range tokens {
-			if v < nTokens {
+			if v <= nTokens {
 				copy(buffer[i:], reverse[v])
 				i += len(reverse[v])
 			}
@@ -852,10 +852,10 @@ func (vocab *Vocab) decodeSerialized(b []byte, encodingLength uint8, buffer []by
 				tokens[i >> 1] = uint16(b[i]) | (uint16(b[i+1]) << 8)
 			}
 		}
-		nTokens := uint16(len(reverse))
+		nTokens := uint16(len(reverse) - 1)
 		var i int
 		for _, v := range tokens {
-			if v < nTokens {
+			if v <= nTokens {
 				i += len(reverse[v])
 			}
 		}
@@ -868,7 +868,7 @@ func (vocab *Vocab) decodeSerialized(b []byte, encodingLength uint8, buffer []by
 		// Copy the keys into it
 		i = 0
 		for _, v := range tokens {
-			if v < nTokens {
+			if v <= nTokens {
 				copy(buffer[i:], reverse[v])
 				i += len(reverse[v])
 			}

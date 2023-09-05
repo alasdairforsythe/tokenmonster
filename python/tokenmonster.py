@@ -1298,4 +1298,4 @@ def is_int(obj):
     return False
 
 _TOKENMONSTER_URL = "https://huggingface.co/alasdairforsythe/tokenmonster/resolve/main/"
-_TMS_VERSION_ID = 3
+_TMS_VERSION_ID = 4

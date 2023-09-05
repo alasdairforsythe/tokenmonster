@@ -47,7 +47,7 @@ const ( // status codes
 	ERROR_READ_FAILED = 14
 	ERROR_INVALID_JOB = 15
 	ERROR_YAML_INVALID = 16
-	VERSION = 3
+	VERSION = 4
 )
 
 type work struct {
