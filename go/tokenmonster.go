@@ -485,6 +485,9 @@ func (d *Decoder) DecodeSerialized(b []byte, encodingLength uint8, buffer []byte
 			}
 		}
 		reverse := d.vocab.reverse
+		if len(reverse) == 0 {
+			return []byte{}
+		}
 		nTokens := uint16(len(reverse) - 1)
 		var i int
 		if d.vocab.charset == 0 {
@@ -851,6 +854,9 @@ func (vocab *Vocab) decodeSerialized(b []byte, encodingLength uint8, buffer []by
 			for ; i<to; i+=2 {
 				tokens[i >> 1] = uint16(b[i]) | (uint16(b[i+1]) << 8)
 			}
+		}
+		if len(reverse) == 0 {
+			return []byte{}
 		}
 		nTokens := uint16(len(reverse) - 1)
 		var i int

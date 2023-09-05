@@ -47,7 +47,7 @@ const ( // status codes
 	ERROR_READ_FAILED = 14
 	ERROR_INVALID_JOB = 15
 	ERROR_YAML_INVALID = 16
-	VERSION = 4
+	VERSION = 5
 )
 
 type work struct {
@@ -289,6 +289,7 @@ func main() {
 
 	if len(os.Args) < 2 {
 		fmt.Println(`This application is a subprocess to accelerate the TokenMonster python library.`)
+		fmt.Println(`TMS VERSION`, VERSION)
 		fmt.Println(`Exiting`)
 		os.Exit(0)
 	}

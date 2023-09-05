@@ -1152,7 +1152,7 @@ class Vocab:
                 if tms_version < _TMS_VERSION_ID:
                     raise RuntimeError("TokenMonster: tokenmonsterserver version does not match Python library version")
             if tms_version > _TMS_VERSION_ID:
-                cls.disconnect()
+                cls._disconnect()
                 raise RuntimeError("TokenMonster: Version mismatch. Please upgrade tokenmonster with `pip install --upgrade tokenmonster`")
 
     #@classmethod
@@ -1298,4 +1298,4 @@ def is_int(obj):
     return False
 
 _TOKENMONSTER_URL = "https://huggingface.co/alasdairforsythe/tokenmonster/resolve/main/"
-_TMS_VERSION_ID = 4
+_TMS_VERSION_ID = 5
