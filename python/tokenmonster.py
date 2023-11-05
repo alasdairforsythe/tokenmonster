@@ -984,9 +984,10 @@ class Vocab:
                             data[i] = item.encode("utf-8")
                     elif not isinstance(item, bytes):
                         raise ValueError("TokenMonster: Invalid input for vocabulary modification. Input should be string or bytes string, or list thereof.")
+            return data
         else:
             raise ValueError("TokenMonster: Invalid input for vocabulary modification. Input should be string or bytes string, or list thereof.")
-    
+
     def _modified(self):
         self._modified_id += 1
         self.dictionary = None
