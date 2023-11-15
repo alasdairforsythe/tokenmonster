@@ -146,7 +146,7 @@ The optimization `mode` is one of the most important parameters, as this complet
 
 `-mode strict` attempts to have only 1 token for each word, however it is written. `HELLO`, `"Hello"` & `hello!` will all be tokenized with the same ` hello` token, combined with capcode and punctuation tokens. It is allowed for tokens to cover multiple words, so ` how` and ` how are you` may be separate tokens. Open-closers such as `([{'"` are restricted from being combined with other marks, with some exceptions.
 
-As a rule of thumb, small models should use `strict` or `consistent`, medium models should use `consistent` or `balanced`, and large models should use `balanced` or `clean`. You can view the difference between them on the [online viewer](https://bot.co/tokenmonster/).
+As a rule of thumb, small models should use `strict` or `consistent`, medium models should use `consistent` or `balanced`, and large models should use `balanced` or `clean`. You can view the difference between them on the [online viewer](https://alasdair.com/tokenmonster/).
 
 ### -max-token-length
 
