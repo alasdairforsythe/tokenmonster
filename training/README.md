@@ -41,7 +41,7 @@ go mod init tokenmonster
 go mod tidy
 go build getalltokens.go
 go build trainvocab.go
-go build exporttokens.go
+go build exportvocab.go
 ```
 
 ### Windows
