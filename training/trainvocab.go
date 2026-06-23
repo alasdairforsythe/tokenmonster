@@ -12,6 +12,7 @@ import (
 	"unicode"
 	"reflect"
 	"strings"
+	"unsafe"
 	"math/rand"
 	"io/ioutil"
 	"sync/atomic"
@@ -151,6 +152,12 @@ func flagIsSet(flagName string) bool {
 
 func formatInt(v int) string {
 	return string(conv.FormatThousands(conv.Bytes(v), ','))
+}
+
+func String(b []byte) string {
+	// Convert token bytes to a string without allocation for lookup-only paths.
+	// The referenced bytes must not be mutated while the string is used.
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 func hasSuffixPos(key []byte) int {
@@ -1251,11 +1258,18 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 			tokenResult = make([][]byte, length)
 			index = 0
 			for i=0; i<length && i<len(scores); i++ {
-				if len(keys[scores[i].K]) == 1 { // don't try to remove single bytes
+				token := keys[scores[i].K]
+				if len(token) == 1 { // don't try to remove single bytes
 					length++
 					continue
 				}
-				tokenResult[index] = keys[scores[i].K]
+				if hasSpecial {
+					if _, found = specialMap[String(token)]; found { // don't try to remove special tokens
+						length++
+						continue
+					}
+				}
+				tokenResult[index] = token
 				index++
 			}
 			tokenResult = tokenResult[0:index]
@@ -1266,10 +1280,16 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 						if scores[i].V > 0 {
 							break
 						}
-						if len(keys[scores[i].K]) == 1 { // don't try to remove single bytes
+						token := keys[scores[i].K]
+						if len(token) == 1 { // don't try to remove single bytes
 							continue
 						}
-						tokenResult = append(tokenResult, keys[scores[i].K])
+						if hasSpecial {
+							if _, found = specialMap[String(token)]; found { // don't try to remove special tokens
+								continue
+							}
+						}
+						tokenResult = append(tokenResult, token)
 					}
 				}
 			}
@@ -1286,7 +1306,7 @@ func worker(id int, datastrips [][]byte, filedata []byte) {
 					continue
 				}
 				if hasSpecial {
-					if _, found = specialMap[string(b)]; found {
+					if _, found = specialMap[String(b)]; found {
 						continue
 					}
 				}
@@ -1716,7 +1736,7 @@ func main() {
 
 	// Remove Special tokens
 	for _, special := range specialTokens {
-		specialMap[string(special)] = true
+		specialMap[String(special)] = true
 		for idx, tok := range tokens {
 			if bytes.Contains(tok, special) {
 				tokens[idx] = nil
@@ -2011,7 +2031,7 @@ func main() {
 						if hasSpecial {
 							for _, b := range toks {
 								if len(b) > 1 {
-									if _, exists = specialMap[string(b)]; !exists {
+									if _, exists = specialMap[String(b)]; !exists {
 										if i, exists = counterMultiDeletes.Find(b); !exists || i < 4000 {
 											uniqueTokens.Add(b, 1)
 										}
@@ -2041,7 +2061,7 @@ func main() {
 								if hasSpecial {
 									for _, b := range toks {
 										if len(b) > 1 {
-											if _, exists = specialMap[string(b)]; !exists {
+											if _, exists = specialMap[String(b)]; !exists {
 												uniqueTokens.Add(b, 1)
 											}
 										}
@@ -2069,7 +2089,7 @@ func main() {
 						i = 0
 						for _, b := range double1 {
 							if len(b) > 1 {
-								if _, exists = specialMap[string(b)]; !exists {
+								if _, exists = specialMap[String(b)]; !exists {
 									if _, exists = uniqueTokens.Find(b); !exists {
 										if i2, exists = counterMultiDeletes.Find(b); !exists || i2 < 1000 {
 											addlist = append(addlist, b)
@@ -2084,7 +2104,7 @@ func main() {
 						i = 0
 						for _, b := range double2 {
 							if len(b) > 1 {
-								if _, exists = specialMap[string(b)]; !exists {
+								if _, exists = specialMap[String(b)]; !exists {
 									if _, exists = uniqueTokens.Find(b); !exists {
 										if i2, exists = counterMultiDeletes.Find(b); !exists || i2 < 1000 {
 											addlist = append(addlist, b)
