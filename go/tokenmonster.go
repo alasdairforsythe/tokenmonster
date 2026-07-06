@@ -1503,21 +1503,21 @@ func (vocab Vocab) tokenizeCount(data []byte) (int, int, error) {
 							forwardDelete = 0
 							goto checkpoint
 						case score1b:
-							tokens++
+							tokens += 2
 							i += length
 							length = length1b
 							index = index1b
 							forwardDelete = 1
 							goto checkpoint
 						case score2b:
-							tokens++
+							tokens += 2
 							i += original.length - forwardDelete
 							length = length2b
 							index = index2b
 							forwardDelete = 1
 							goto checkpoint
 						case score3b:
-							tokens++
+							tokens += 2
 							i += original.length2 - forwardDelete
 							length = length3b
 							index = index3b
