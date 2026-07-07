@@ -37,6 +37,24 @@ int max_zero_and(int x) { return x > 0 ? x : 0; }
 int less_than(int x, int y) { return x < y ? 1 : 0; }
 int equal_to(int x, int y) { return x == y ? 1 : 0; }
 
+// Copy a token's `len` bytes from `src` to `dst`. Nearly all tokens are <= 16
+// bytes, so use constant-width word stores for those, which the compiler
+// inlines to a load/store pair instead of a libc memcpy/memmove call per token.
+// REQUIRES: dst has >= 16 writable bytes from its start; the <=8 branch stores a
+// full 8-byte word, so every detokenize caller over-allocates its output buffer
+// by 16 bytes and resizes back down after the fill loop.
+TM_ALWAYS_INLINE void copy_token_words(std::uint8_t* dst, const std::uint8_t* src,
+                                       std::size_t len) {
+  if (len <= 8) {
+    std::memcpy(dst, src, 8);
+  } else if (len <= 16) {
+    std::memcpy(dst, src, 8);
+    std::memcpy(dst + len - 8, src + len - 8, 8);
+  } else {
+    std::memcpy(dst, src, len);
+  }
+}
+
 void append_bytes(Bytes& out, std::span<const std::uint8_t> bytes) {
   out.insert(out.end(), bytes.begin(), bytes.end());
 }
@@ -1556,16 +1574,7 @@ std::vector<std::uint8_t> Vocab::decode_raw(std::span<const std::uint32_t> token
     if (id < n) {
       std::uint32_t o = off[id];
       std::uint32_t len = off[id + 1] - o;
-      // Copy tokens (nearly all <= 16 bytes) with constant-size 8-byte words
-      // that inline to load/store pairs, avoiding a libc memcpy call per token.
-      if (len <= 8) {
-        std::memcpy(data.data() + i, blob + o, 8);
-      } else if (len <= 16) {
-        std::memcpy(data.data() + i, blob + o, 8);
-        std::memcpy(data.data() + i + len - 8, blob + o + len - 8, 8);
-      } else {
-        std::memcpy(data.data() + i, blob + o, len);
-      }
+      copy_token_words(data.data() + i, blob + o, len);
       i += len;
     }
   }
@@ -1594,16 +1603,17 @@ std::vector<std::uint8_t> Vocab::decode_serialized_raw(std::span<const std::uint
       auto v = static_cast<std::uint16_t>(data[i] | (data[i + 1] << 8));
       if (v <= n_tokens) size += reverse_at(v).size();
     }
-    buffer.resize(size);
-    size = 0;
+    buffer.resize(size + 16);  // slack for the word-store fast copy
+    std::size_t at = 0;
     for (std::size_t i = 0; i + 1 < data.size(); i += 2) {
       auto v = static_cast<std::uint16_t>(data[i] | (data[i + 1] << 8));
       if (v <= n_tokens) {
-        std::copy(reverse_at(v).begin(), reverse_at(v).end(),
-                  buffer.begin() + static_cast<std::ptrdiff_t>(size));
-        size += reverse_at(v).size();
+        auto tok = reverse_at(v);
+        copy_token_words(buffer.data() + at, tok.data(), tok.size());
+        at += tok.size();
       }
     }
+    buffer.resize(size);
     return buffer;
   }
   if (encoding_length == 3) {
@@ -1615,18 +1625,19 @@ std::vector<std::uint8_t> Vocab::decode_serialized_raw(std::span<const std::uint
                (static_cast<std::uint32_t>(data[i + 2]) << 16);
       if (v < n_tokens) size += reverse_at(v).size();
     }
-    buffer.resize(size);
-    size = 0;
+    buffer.resize(size + 16);  // slack for the word-store fast copy
+    std::size_t at = 0;
     for (std::size_t i = 0; i + 2 < data.size(); i += 3) {
       auto v = static_cast<std::uint32_t>(data[i]) |
                (static_cast<std::uint32_t>(data[i + 1]) << 8) |
                (static_cast<std::uint32_t>(data[i + 2]) << 16);
       if (v < n_tokens) {
-        std::copy(reverse_at(v).begin(), reverse_at(v).end(),
-                  buffer.begin() + static_cast<std::ptrdiff_t>(size));
-        size += reverse_at(v).size();
+        auto tok = reverse_at(v);
+        copy_token_words(buffer.data() + at, tok.data(), tok.size());
+        at += tok.size();
       }
     }
+    buffer.resize(size);
     return buffer;
   }
   if (encoding_length == 4) {
@@ -1639,19 +1650,20 @@ std::vector<std::uint8_t> Vocab::decode_serialized_raw(std::span<const std::uint
                (static_cast<std::uint32_t>(data[i + 3]) << 24);
       if (v < n_tokens) size += reverse_at(v).size();
     }
-    buffer.resize(size);
-    size = 0;
+    buffer.resize(size + 16);  // slack for the word-store fast copy
+    std::size_t at = 0;
     for (std::size_t i = 0; i + 3 < data.size(); i += 4) {
       auto v = static_cast<std::uint32_t>(data[i]) |
                (static_cast<std::uint32_t>(data[i + 1]) << 8) |
                (static_cast<std::uint32_t>(data[i + 2]) << 16) |
                (static_cast<std::uint32_t>(data[i + 3]) << 24);
       if (v < n_tokens) {
-        std::copy(reverse_at(v).begin(), reverse_at(v).end(),
-                  buffer.begin() + static_cast<std::ptrdiff_t>(size));
-        size += reverse_at(v).size();
+        auto tok = reverse_at(v);
+        copy_token_words(buffer.data() + at, tok.data(), tok.size());
+        at += tok.size();
       }
     }
+    buffer.resize(size);
     return buffer;
   }
   return {};
@@ -1673,16 +1685,17 @@ std::vector<std::uint8_t> Decoder::decode(std::span<const std::uint32_t> tokens)
   for (auto id : tokens) {
     if (id < vocab_->reverse_count()) size += vocab_->reverse_at(id).size();
   }
-  Bytes data(size);
+  Bytes data(size + 16);  // slack for the word-store fast copy
   std::copy(remainder_.begin(), remainder_.end(), data.begin());
   std::size_t i = remainder_.size();
   for (auto id : tokens) {
     if (id < vocab_->reverse_count()) {
-      std::copy(vocab_->reverse_at(id).begin(), vocab_->reverse_at(id).end(),
-                data.begin() + static_cast<std::ptrdiff_t>(i));
-      i += vocab_->reverse_at(id).size();
+      auto tok = vocab_->reverse_at(id);
+      copy_token_words(data.data() + i, tok.data(), tok.size());
+      i += tok.size();
     }
   }
+  data.resize(size);
 
   int incomplete =
       vocab_->charset_ == 1 ? incomplete_utf8_bytes(data) : incomplete_utf16_bytes(data);
@@ -1714,16 +1727,17 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
         auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
         if (v <= n_tokens) i += vocab_->reverse_at(v).size();
       }
-      Bytes buffer(i);
+      Bytes buffer(i + 16);  // slack for the word-store fast copy
       i = 0;
       for (std::size_t on = 0; on + 1 < data.size(); on += 2) {
         auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
         if (v <= n_tokens) {
-          std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
-                    buffer.begin() + static_cast<std::ptrdiff_t>(i));
-          i += vocab_->reverse_at(v).size();
+          auto tok = vocab_->reverse_at(v);
+          copy_token_words(buffer.data() + i, tok.data(), tok.size());
+          i += tok.size();
         }
       }
+      buffer.resize(i);
       return buffer;
     }
     i = remainder_.size();
@@ -1731,17 +1745,18 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
       auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
       if (v <= n_tokens) i += vocab_->reverse_at(v).size();
     }
-    Bytes buffer(i);
+    Bytes buffer(i + 16);  // slack for the word-store fast copy
     std::copy(remainder_.begin(), remainder_.end(), buffer.begin());
     i = remainder_.size();
     for (std::size_t on = 0; on + 1 < data.size(); on += 2) {
       auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
       if (v <= n_tokens) {
-        std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
-                  buffer.begin() + static_cast<std::ptrdiff_t>(i));
-        i += vocab_->reverse_at(v).size();
+        auto tok = vocab_->reverse_at(v);
+        copy_token_words(buffer.data() + i, tok.data(), tok.size());
+        i += tok.size();
       }
     }
+    buffer.resize(i);
     std::size_t remaining = buffer.size() - static_cast<std::size_t>(
                                                 vocab_->charset_ == 1
                                                     ? incomplete_utf8_bytes(buffer)
@@ -1763,18 +1778,19 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
             (static_cast<std::uint32_t>(data[on + 2]) << 16);
         if (v < n_tokens) i += vocab_->reverse_at(v).size();
       }
-      Bytes buffer(i);
+      Bytes buffer(i + 16);  // slack for the word-store fast copy
       i = 0;
       for (on = 0; on + 2 < data.size(); on += 3) {
         v = static_cast<std::uint32_t>(data[on]) |
             (static_cast<std::uint32_t>(data[on + 1]) << 8) |
             (static_cast<std::uint32_t>(data[on + 2]) << 16);
         if (v < n_tokens) {
-          std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
-                    buffer.begin() + static_cast<std::ptrdiff_t>(i));
-          i += vocab_->reverse_at(v).size();
+          auto tok = vocab_->reverse_at(v);
+          copy_token_words(buffer.data() + i, tok.data(), tok.size());
+          i += tok.size();
         }
       }
+      buffer.resize(i);
       return buffer;
     }
     i = remainder_.size();
@@ -1784,7 +1800,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
           (static_cast<std::uint32_t>(data[on + 2]) << 16);
       if (v < n_tokens) i += vocab_->reverse_at(v).size();
     }
-    Bytes buffer(i);
+    Bytes buffer(i + 16);  // slack for the word-store fast copy
     std::copy(remainder_.begin(), remainder_.end(), buffer.begin());
     i = remainder_.size();
     for (on = 0; on + 2 < data.size(); on += 3) {
@@ -1792,11 +1808,12 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
           (static_cast<std::uint32_t>(data[on + 1]) << 8) |
           (static_cast<std::uint32_t>(data[on + 2]) << 16);
       if (v < n_tokens) {
-        std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
-                  buffer.begin() + static_cast<std::ptrdiff_t>(i));
-        i += vocab_->reverse_at(v).size();
+        auto tok = vocab_->reverse_at(v);
+        copy_token_words(buffer.data() + i, tok.data(), tok.size());
+        i += tok.size();
       }
     }
+    buffer.resize(i);
     std::size_t remaining = buffer.size() - static_cast<std::size_t>(
                                                 vocab_->charset_ == 1
                                                     ? incomplete_utf8_bytes(buffer)
@@ -1817,7 +1834,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                  (static_cast<std::uint32_t>(data[on + 3]) << 24);
         if (v < n_tokens) i += vocab_->reverse_at(v).size();
       }
-      Bytes buffer(i);
+      Bytes buffer(i + 16);  // slack for the word-store fast copy
       i = 0;
       for (std::size_t on = 0; on + 3 < data.size(); on += 4) {
         auto v = static_cast<std::uint32_t>(data[on]) |
@@ -1825,11 +1842,12 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                  (static_cast<std::uint32_t>(data[on + 2]) << 16) |
                  (static_cast<std::uint32_t>(data[on + 3]) << 24);
         if (v < n_tokens) {
-          std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
-                    buffer.begin() + static_cast<std::ptrdiff_t>(i));
-          i += vocab_->reverse_at(v).size();
+          auto tok = vocab_->reverse_at(v);
+          copy_token_words(buffer.data() + i, tok.data(), tok.size());
+          i += tok.size();
         }
       }
+      buffer.resize(i);
       return buffer;
     }
     i = remainder_.size();
@@ -1840,7 +1858,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                (static_cast<std::uint32_t>(data[on + 3]) << 24);
       if (v < n_tokens) i += vocab_->reverse_at(v).size();
     }
-    Bytes buffer(i);
+    Bytes buffer(i + 16);  // slack for the word-store fast copy
     std::copy(remainder_.begin(), remainder_.end(), buffer.begin());
     i = remainder_.size();
     for (std::size_t on = 0; on + 3 < data.size(); on += 4) {
@@ -1849,11 +1867,12 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                (static_cast<std::uint32_t>(data[on + 2]) << 16) |
                (static_cast<std::uint32_t>(data[on + 3]) << 24);
       if (v < n_tokens) {
-        std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
-                  buffer.begin() + static_cast<std::ptrdiff_t>(i));
-        i += vocab_->reverse_at(v).size();
+        auto tok = vocab_->reverse_at(v);
+        copy_token_words(buffer.data() + i, tok.data(), tok.size());
+        i += tok.size();
       }
     }
+    buffer.resize(i);
     std::size_t remaining = buffer.size() - static_cast<std::size_t>(
                                                 vocab_->charset_ == 1
                                                     ? incomplete_utf8_bytes(buffer)
@@ -2673,7 +2692,7 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
         }
       }
       buffer.push_back(static_cast<std::uint8_t>(original.id));
-            buffer.push_back(static_cast<std::uint8_t>(original.id >> 8));
+      buffer.push_back(static_cast<std::uint8_t>(original.id >> 8));
       i += length;
       forward_delete = 0;
     } else {
@@ -2965,8 +2984,8 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
         }
       }
       buffer.push_back(static_cast<std::uint8_t>(original.id));
-            buffer.push_back(static_cast<std::uint8_t>(original.id >> 8));
-            buffer.push_back(static_cast<std::uint8_t>(original.id >> 16));
+      buffer.push_back(static_cast<std::uint8_t>(original.id >> 8));
+      buffer.push_back(static_cast<std::uint8_t>(original.id >> 16));
       i += length;
       forward_delete = 0;
     } else {
@@ -3268,9 +3287,9 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
         }
       }
       buffer.push_back(static_cast<std::uint8_t>(original.id));
-            buffer.push_back(static_cast<std::uint8_t>(original.id >> 8));
-            buffer.push_back(static_cast<std::uint8_t>(original.id >> 16));
-            buffer.push_back(0);
+      buffer.push_back(static_cast<std::uint8_t>(original.id >> 8));
+      buffer.push_back(static_cast<std::uint8_t>(original.id >> 16));
+      buffer.push_back(0);
       i += length;
       forward_delete = 0;
     } else {
@@ -3349,7 +3368,9 @@ TokenizeResult Vocab::tokenize_greedy(std::span<const std::uint8_t> data) const 
   if (max_token_length_ == 0) return {};
   auto normalized = normalize(data);
   std::vector<std::uint32_t> tokens;
-  tokens.reserve(static_cast<std::size_t>((normalized.size() / 4) + 4));
+  // Real corpora tokenize at ~0.34-0.53 tokens/byte (same as the ungreedy path);
+  // reserving len/2 avoids a mid-tokenization growth realloc of the output buffer.
+  tokens.reserve(static_cast<std::size_t>((normalized.size() / 2) + 4));
   int missing = tokenize_greedy_normalized(
       normalized, [&tokens](std::uint32_t id) { tokens.push_back(id); });
   return {std::move(tokens), missing};
@@ -3376,14 +3397,14 @@ SerializedResult Vocab::tokenize_serialized_greedy(std::span<const std::uint8_t>
   int missing = 0;
   switch (encoding_length) {
     case 2:
-      buffer.reserve(static_cast<std::size_t>((len_data / 2) + 4));
+      buffer.reserve(static_cast<std::size_t>(len_data + 4));  // ~0.5 tok/B * 2 bytes
       missing = tokenize_greedy_normalized(normalized, [&buffer](std::uint32_t id) {
         buffer.push_back(static_cast<std::uint8_t>(id));
         buffer.push_back(static_cast<std::uint8_t>(id >> 8));
       });
       break;
     case 3:
-      buffer.reserve(static_cast<std::size_t>((len_data / 2) + 6));
+      buffer.reserve(static_cast<std::size_t>(len_data + (len_data / 2) + 6));  // ~0.5 tok/B * 3
       missing = tokenize_greedy_normalized(normalized, [&buffer](std::uint32_t id) {
         buffer.push_back(static_cast<std::uint8_t>(id));
         buffer.push_back(static_cast<std::uint8_t>(id >> 8));
@@ -3391,7 +3412,7 @@ SerializedResult Vocab::tokenize_serialized_greedy(std::span<const std::uint8_t>
       });
       break;
     case 4:
-      buffer.reserve(static_cast<std::size_t>(len_data + 8));
+      buffer.reserve(static_cast<std::size_t>((len_data * 2) + 8));  // ~0.5 tok/B * 4 bytes
       missing = tokenize_greedy_normalized(normalized, [&buffer](std::uint32_t id) {
         buffer.push_back(static_cast<std::uint8_t>(id));
         buffer.push_back(static_cast<std::uint8_t>(id >> 8));
