@@ -95,13 +95,16 @@ int main(int argc, char** argv) {
     auto vocab = tokenmonster::Vocab::load(argv[1]);
     auto corpus = make_corpus(corpus_bytes);
     auto tokenized = vocab.tokenize(bytes(corpus));
+    auto greedy_tokenized = vocab.tokenize_greedy(bytes(corpus));
     auto decoded = vocab.decode(tokenized.tokens);
 
     std::cout << "impl\tcpp\n";
     std::cout << "vocab_size\t" << vocab.size() << '\n';
+    std::cout << "capcode\t" << static_cast<int>(vocab.capcode()) << '\n';
     std::cout << "corpus_bytes\t" << corpus.size() << '\n';
     std::cout << "corpus_fnv1a\t" << fnv1a(bytes(corpus)) << '\n';
     std::cout << "tokens\t" << tokenized.tokens.size() << '\n';
+    std::cout << "greedy_tokens\t" << greedy_tokenized.tokens.size() << '\n';
     std::cout << "missing\t" << tokenized.missing << '\n';
     std::cout << "decoded_bytes\t" << decoded.size() << '\n';
     std::cout << "decoded_fnv1a\t" << fnv1a(bytes(decoded)) << '\n';
@@ -114,7 +117,7 @@ int main(int argc, char** argv) {
 
     auto normalized = vocab.normalize(bytes(corpus));
     run_bench("tokenize_normalized", seconds, normalized.size(), [&]() {
-      auto result = vocab.tokenize_normalized(bytes(normalized));
+      auto result = vocab.tokenize_normalized(normalized);
       std::uint64_t sum = static_cast<std::uint64_t>(result.tokens.size()) +
                           static_cast<std::uint64_t>(result.missing) * 131ULL;
       if (!result.tokens.empty()) {
@@ -126,6 +129,17 @@ int main(int argc, char** argv) {
 
     run_bench("encode_tokenize", seconds, corpus.size(), [&]() {
       auto result = vocab.tokenize(bytes(corpus));
+      std::uint64_t sum = static_cast<std::uint64_t>(result.tokens.size()) +
+                          static_cast<std::uint64_t>(result.missing) * 131ULL;
+      if (!result.tokens.empty()) {
+        sum += result.tokens.front();
+        sum += result.tokens.back();
+      }
+      return sum;
+    });
+
+    run_bench("encode_tokenize_greedy", seconds, corpus.size(), [&]() {
+      auto result = vocab.tokenize_greedy(bytes(corpus));
       std::uint64_t sum = static_cast<std::uint64_t>(result.tokens.size()) +
                           static_cast<std::uint64_t>(result.missing) * 131ULL;
       if (!result.tokens.empty()) {

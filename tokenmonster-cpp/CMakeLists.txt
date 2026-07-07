@@ -9,13 +9,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(TOKENMONSTER_CPP_BUILD_TESTS "Build tokenmonster-cpp tests" ${PROJECT_IS_TOP_LEVEL})
-set(TOKENMONSTER_CPP_CAPCODE_SOURCE_DIR "" CACHE PATH "Optional path to a capcode-cpp source checkout")
+set(TOKENMONSTER_CPP_CAPCODE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../capcode-cpp" CACHE PATH "Optional path to a capcode-cpp source checkout")
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ICU REQUIRED IMPORTED_TARGET icu-uc icu-i18n)
 
 if(NOT TARGET capcode::capcode)
-  if(TOKENMONSTER_CPP_CAPCODE_SOURCE_DIR)
+  if(TOKENMONSTER_CPP_CAPCODE_SOURCE_DIR AND EXISTS "${TOKENMONSTER_CPP_CAPCODE_SOURCE_DIR}/CMakeLists.txt")
     add_subdirectory("${TOKENMONSTER_CPP_CAPCODE_SOURCE_DIR}" capcode-cpp-build EXCLUDE_FROM_ALL)
   elseif(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../capcode-cpp/CMakeLists.txt")
     add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/../capcode-cpp" capcode-cpp-build EXCLUDE_FROM_ALL)

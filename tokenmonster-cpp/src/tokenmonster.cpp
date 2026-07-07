@@ -3,6 +3,7 @@
 #include <capcode/capcode.hpp>
 
 #include <unicode/normalizer2.h>
+#include <unicode/bytestream.h>
 #include <unicode/uchar.h>
 #include <unicode/locid.h>
 #include <unicode/unistr.h>
@@ -13,7 +14,12 @@
 #include <fstream>
 #include <limits>
 #include <string>
-#include <unordered_map>
+
+#if defined(__GNUC__) || defined(__clang__)
+#define TM_ALWAYS_INLINE inline __attribute__((always_inline))
+#else
+#define TM_ALWAYS_INLINE inline
+#endif
 
 namespace tokenmonster {
 namespace {
@@ -133,7 +139,14 @@ class Reader {
   explicit Reader(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw Error("failed to open vocabulary file");
-    data_ = Bytes(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    in.seekg(0, std::ios::end);
+    const std::streamoff size = in.tellg();
+    if (size < 0) throw Error("failed to read vocabulary file");
+    data_.resize(static_cast<std::size_t>(size));
+    in.seekg(0, std::ios::beg);
+    if (size > 0 && !in.read(reinterpret_cast<char*>(data_.data()), size)) {
+      throw Error("truncated vocabulary file");
+    }
   }
 
   std::uint8_t read_byte() {
@@ -187,6 +200,19 @@ class Reader {
   std::size_t at_ = 0;
 };
 
+// ICU ByteSink that appends UTF-8 output directly into a Bytes buffer.
+class BytesSink : public icu::ByteSink {
+ public:
+  explicit BytesSink(Bytes& out) : out_(out) {}
+  void Append(const char* data, std::int32_t n) override {
+    out_.insert(out_.end(), reinterpret_cast<const std::uint8_t*>(data),
+                reinterpret_cast<const std::uint8_t*>(data) + n);
+  }
+
+ private:
+  Bytes& out_;
+};
+
 Bytes nfd(Bytes input) {
   bool ascii = true;
   for (auto b : input) {
@@ -198,16 +224,19 @@ Bytes nfd(Bytes input) {
   if (ascii) return input;
 
   UErrorCode status = U_ZERO_ERROR;
-  auto* normalizer = icu::Normalizer2::getNFDInstance(status);
+  const icu::Normalizer2* normalizer = icu::Normalizer2::getNFDInstance(status);
   if (U_FAILURE(status)) throw Error("normalization error");
-  icu::UnicodeString u = icu::UnicodeString::fromUTF8(
-      icu::StringPiece(reinterpret_cast<const char*>(input.data()), static_cast<int>(input.size())));
-  icu::UnicodeString out;
-  normalizer->normalize(u, out, status);
+  // Normalize UTF-8 directly into the output buffer, skipping the intermediate
+  // UTF-16 UnicodeString and std::string. ICU fast-paths already-NFD/ASCII runs.
+  Bytes out;
+  out.reserve(input.size() + input.size() / 2 + 16);
+  BytesSink sink(out);
+  normalizer->normalizeUTF8(
+      0, icu::StringPiece(reinterpret_cast<const char*>(input.data()),
+                          static_cast<std::int32_t>(input.size())),
+      sink, nullptr, status);
   if (U_FAILURE(status)) throw Error("normalization error");
-  std::string s;
-  out.toUTF8String(s);
-  return Bytes(s.begin(), s.end());
+  return out;
 }
 
 Bytes lower_case(Bytes input) {
@@ -474,17 +503,111 @@ skipahead:
   return bytes;
 }
 
-Bytes apply_capcode(std::span<const std::uint8_t> data, std::uint8_t using_capcode) {
+Bytes apply_capcode(Bytes data, std::uint8_t using_capcode) {
   if (using_capcode == 2) return capcode::encode(data);
   if (using_capcode == 1) return capcode::no_capcode_encode(data);
-  return Bytes(data.begin(), data.end());
+  return data;  // capcode disabled: move the buffer through instead of re-copying
 }
 
 Bytes normalize_and_capcode(std::span<const std::uint8_t> data, std::uint8_t using_capcode,
                             std::uint8_t normalizer_flag) {
   auto normalized = normalize_bytes(data, normalizer_flag);
-  return apply_capcode(normalized, using_capcode);
+  return apply_capcode(std::move(normalized), using_capcode);
 }
+
+// Low-bits view of an integer key, used only to feed the multiplicative hash.
+TM_ALWAYS_INLINE std::uint64_t low_key(std::uint32_t k) { return k; }
+TM_ALWAYS_INLINE std::uint64_t low_key(std::uint64_t k) { return k; }
+TM_ALWAYS_INLINE std::uint64_t low_key(const std::array<std::uint64_t, 2>& k) {
+  return k[0] ^ (k[1] * 0x9e3779b97f4a7c15ULL);
+}
+
+// Open-addressing hash map specialized for the pansearch dictionary maps
+// (map4/map8/map16): built once during Vocab::load, then read-only during
+// tokenization. Structure-of-arrays (keys separate from the value store) keeps
+// the probe scan in one cache line, and a single-multiply Fibonacci hash into
+// the high bits is cheaper than a full integer mixer while distributing these
+// packed-byte keys well. Benchmarked faster than absl::flat_hash_map and
+// std::unordered_map on this workload. Interface is the STL subset the
+// dictionary uses: find() returns a pointer (nullptr == absent), end() is
+// nullptr, operator[] inserts during build. The table is built lazily on the
+// first find(), which always follows all inserts.
+template <class K>
+class FibMap {
+ public:
+  using value_type = std::pair<K, std::uint32_t>;
+
+  void clear() {
+    kv_.clear();
+    probe_.clear();
+    mask_ = 0;
+    shift_ = 0;
+    built_ = false;
+  }
+  void reserve(std::size_t n) { kv_.reserve(n); }
+
+  // Build phase: unique keys appended; value assigned through the returned ref.
+  std::uint32_t& operator[](const K& key) {
+    kv_.push_back({key, 0});
+    return kv_.back().second;
+  }
+
+  const std::uint32_t* end() const { return nullptr; }
+
+  // Build the probe table. Must be called once after all operator[] inserts
+  // and before any find(); Vocab::load does this via FastDictionary::build so
+  // find() stays branch-free on the tokenization hot path.
+  void finalize() {
+    if (!built_) build();
+  }
+
+  // Returns a pointer to the stored value, or nullptr (== end()) if absent.
+  TM_ALWAYS_INLINE const std::uint32_t* find(const K& key) const {
+    std::size_t p = slot(key);
+    for (;;) {
+      const Slot& e = probe_[p];
+      if (e.value == kEmpty) return nullptr;
+      if (e.key == key) return &e.value;
+      p = (p + 1) & mask_;
+    }
+  }
+
+ private:
+  // Values are token indices (< 2^24), so 0xFFFFFFFF is a free "empty" marker.
+  // Storing the value inline in the slot means a hit reads it straight from the
+  // probed cache line (no separate value-store indirection).
+  static constexpr std::uint32_t kEmpty = 0xFFFFFFFFU;
+  struct Slot {
+    K key{};
+    std::uint32_t value = kEmpty;
+  };
+
+  TM_ALWAYS_INLINE std::size_t slot(const K& key) const {
+    return (low_key(key) * 11400714819323198485ULL) >> shift_;
+  }
+
+  void build() {
+    std::size_t cap = 1;
+    while (cap < kv_.size() * 2 + 1) cap <<= 1;  // load factor <= 0.5
+    probe_.assign(cap, Slot{});
+    mask_ = cap - 1;
+    shift_ = 64;
+    for (std::size_t c = cap; c > 1; c >>= 1) --shift_;
+    for (std::size_t i = 0; i < kv_.size(); ++i) {
+      std::size_t p = slot(kv_[i].first);
+      while (probe_[p].value != kEmpty) p = (p + 1) & mask_;
+      probe_[p] = {kv_[i].first, kv_[i].second};
+    }
+    kv_ = std::vector<value_type>{};  // staging no longer needed; free it
+    built_ = true;
+  }
+
+  std::vector<value_type> kv_;   // build-time staging of {key, value} inserts
+  std::vector<Slot> probe_;      // AoS probe table: {key, value} per slot
+  std::size_t mask_ = 0;
+  int shift_ = 0;
+  bool built_ = false;
+};
 
 }  // namespace
 
@@ -694,6 +817,12 @@ class Vocab::FastDictionary {
     for (run = 2; run < 41; run++) {
       count_[run] += count_[run - 1];
     }
+
+    // Build all hash-map probe tables now so find() is branch-free during
+    // tokenization (no per-lookup "is it built yet?" check).
+    for (auto& m : map4_) m.finalize();
+    for (auto& m : map8_) m.finalize();
+    for (auto& m : map16_) m.finalize();
   }
 
   std::pair<std::uint32_t, bool> find(std::span<const std::uint8_t> key) const {
@@ -716,20 +845,20 @@ class Vocab::FastDictionary {
             auto it = map4_[0].find((static_cast<std::uint32_t>(key[0]) << 16) |
                                     (static_cast<std::uint32_t>(key[1]) << 8) | key[2]);
             return it == map4_[0].end() ? std::pair<std::uint32_t, bool>{0, false}
-                                        : std::pair<std::uint32_t, bool>{it->second, true};
+                                        : std::pair<std::uint32_t, bool>{*it, true};
           }
           case 4: {
             auto it = map4_[1].find((static_cast<std::uint32_t>(key[0]) << 24) |
                                     (static_cast<std::uint32_t>(key[1]) << 16) |
                                     (static_cast<std::uint32_t>(key[2]) << 8) | key[3]);
             return it == map4_[1].end() ? std::pair<std::uint32_t, bool>{0, false}
-                                        : std::pair<std::uint32_t, bool>{it->second, true};
+                                        : std::pair<std::uint32_t, bool>{*it, true};
           }
           default: {
             auto [a, l] = bytes2uint64(key);
             auto it = map8_[l - 4].find(a);
             return it == map8_[l - 4].end() ? std::pair<std::uint32_t, bool>{0, false}
-                                            : std::pair<std::uint32_t, bool>{it->second, true};
+                                            : std::pair<std::uint32_t, bool>{*it, true};
           }
         }
       case 1: {
@@ -740,7 +869,7 @@ class Vocab::FastDictionary {
         auto [b, l] = bytes2uint64(key.subspan(8));
         auto it = map16_[l].find({a, b});
         return it == map16_[l].end() ? std::pair<std::uint32_t, bool>{0, false}
-                                     : std::pair<std::uint32_t, bool>{it->second, true};
+                                     : std::pair<std::uint32_t, bool>{*it, true};
       }
       case 2: {
         auto [a, unused_a] = bytes2uint64(key);
@@ -904,19 +1033,13 @@ class Vocab::FastDictionary {
     T value{};
   };
 
-  struct DoubleHash {
-    std::size_t operator()(const Double& v) const noexcept {
-      std::uint64_t h = (v[0] ^ (v[1] + 0x9e3779b97f4a7c15ULL + (v[0] << 6) + (v[0] >> 2)));
-      return static_cast<std::size_t>(h);
-    }
-  };
-
   template <typename T>
   static bool by_value(const KeyVal<T>& a, const KeyVal<T>& b) {
     return a.value < b.value;
   }
 
-  static std::pair<std::uint64_t, int> bytes2uint64(std::span<const std::uint8_t> word) {
+  TM_ALWAYS_INLINE static std::pair<std::uint64_t, int> bytes2uint64(
+      std::span<const std::uint8_t> word) {
     switch (word.size()) {
       case 0:
         return {0, 0};
@@ -950,14 +1073,15 @@ class Vocab::FastDictionary {
     }
   }
 
-  static std::uint64_t pack8(std::span<const std::uint8_t> key) {
+  TM_ALWAYS_INLINE static std::uint64_t pack8(std::span<const std::uint8_t> key) {
     return (std::uint64_t(key[0]) << 56) | (std::uint64_t(key[1]) << 48) |
            (std::uint64_t(key[2]) << 40) | (std::uint64_t(key[3]) << 32) |
            (std::uint64_t(key[4]) << 24) | (std::uint64_t(key[5]) << 16) |
            (std::uint64_t(key[6]) << 8) | std::uint64_t(key[7]);
   }
 
-  LongestResult find0(std::span<const std::uint8_t> key, std::uint64_t a) const {
+  TM_ALWAYS_INLINE LongestResult find0(std::span<const std::uint8_t> key,
+                                       std::uint64_t a) const {
     std::uint32_t index = 0;
     switch (key.size()) {
       case 0:
@@ -974,7 +1098,7 @@ class Vocab::FastDictionary {
         return {};
       case 3: {
         auto it = map4_[0].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[0].end()) return {it->second, 3, true};
+        if (it != map4_[0].end()) return {*it, 3, true};
         a >>= 8;
         index = map2_[a];
         if (index != kFalse) return {index, 2, true};
@@ -984,10 +1108,10 @@ class Vocab::FastDictionary {
       }
       case 4: {
         auto it = map4_[1].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[1].end()) return {it->second, 4, true};
+        if (it != map4_[1].end()) return {*it, 4, true};
         a >>= 8;
         it = map4_[0].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[0].end()) return {it->second, 3, true};
+        if (it != map4_[0].end()) return {*it, 3, true};
         a >>= 8;
         index = map2_[a];
         if (index != kFalse) return {index, 2, true};
@@ -999,14 +1123,14 @@ class Vocab::FastDictionary {
         auto bit = (kFibonacci * a) >> 40;
         if ((bloom8_top4_[bit >> 6] & (std::uint64_t{1} << (bit & 63))) != 0) {
           auto it = map8_[0].find(a);
-          if (it != map8_[0].end()) return {it->second, 5, true};
+          if (it != map8_[0].end()) return {*it, 5, true};
         }
         a >>= 8;
         auto it = map4_[1].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[1].end()) return {it->second, 4, true};
+        if (it != map4_[1].end()) return {*it, 4, true};
         a >>= 8;
         it = map4_[0].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[0].end()) return {it->second, 3, true};
+        if (it != map4_[0].end()) return {*it, 3, true};
         a >>= 8;
         index = map2_[a];
         if (index != kFalse) return {index, 2, true};
@@ -1018,19 +1142,19 @@ class Vocab::FastDictionary {
         auto bit = (kFibonacci * (a >> 8)) >> 40;
         if ((bloom8_top4_[bit >> 6] & (std::uint64_t{1} << (bit & 63))) != 0) {
           auto it8 = map8_[1].find(a);
-          if (it8 != map8_[1].end()) return {it8->second, 6, true};
+          if (it8 != map8_[1].end()) return {*it8, 6, true};
           a >>= 8;
           it8 = map8_[0].find(a);
-          if (it8 != map8_[0].end()) return {it8->second, 5, true};
+          if (it8 != map8_[0].end()) return {*it8, 5, true};
           a >>= 8;
         } else {
           a >>= 16;
         }
         auto it = map4_[1].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[1].end()) return {it->second, 4, true};
+        if (it != map4_[1].end()) return {*it, 4, true};
         a >>= 8;
         it = map4_[0].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[0].end()) return {it->second, 3, true};
+        if (it != map4_[0].end()) return {*it, 3, true};
         a >>= 8;
         index = map2_[a];
         if (index != kFalse) return {index, 2, true};
@@ -1044,23 +1168,23 @@ class Vocab::FastDictionary {
           bit = (kFibonacci * a) >> 40;
           if ((bloom8_top2_[bit >> 6] & (std::uint64_t{1} << (bit & 63))) != 0) {
             auto it8 = map8_[2].find(a);
-            if (it8 != map8_[2].end()) return {it8->second, 7, true};
+            if (it8 != map8_[2].end()) return {*it8, 7, true};
           }
           a >>= 8;
           auto it8 = map8_[1].find(a);
-          if (it8 != map8_[1].end()) return {it8->second, 6, true};
+          if (it8 != map8_[1].end()) return {*it8, 6, true};
           a >>= 8;
           it8 = map8_[0].find(a);
-          if (it8 != map8_[0].end()) return {it8->second, 5, true};
+          if (it8 != map8_[0].end()) return {*it8, 5, true};
           a >>= 8;
         } else {
           a >>= 24;
         }
         auto it = map4_[1].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[1].end()) return {it->second, 4, true};
+        if (it != map4_[1].end()) return {*it, 4, true};
         a >>= 8;
         it = map4_[0].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[0].end()) return {it->second, 3, true};
+        if (it != map4_[0].end()) return {*it, 3, true};
         a >>= 8;
         index = map2_[a];
         if (index != kFalse) return {index, 2, true};
@@ -1074,28 +1198,28 @@ class Vocab::FastDictionary {
           bit = (kFibonacci * (a >> 8)) >> 40;
           if ((bloom8_top2_[bit >> 6] & (std::uint64_t{1} << (bit & 63))) != 0) {
             auto it8 = map8_[3].find(a);
-            if (it8 != map8_[3].end()) return {it8->second, 8, true};
+            if (it8 != map8_[3].end()) return {*it8, 8, true};
             a >>= 8;
             it8 = map8_[2].find(a);
-            if (it8 != map8_[2].end()) return {it8->second, 7, true};
+            if (it8 != map8_[2].end()) return {*it8, 7, true};
             a >>= 8;
           } else {
             a >>= 16;
           }
           auto it8 = map8_[1].find(a);
-          if (it8 != map8_[1].end()) return {it8->second, 6, true};
+          if (it8 != map8_[1].end()) return {*it8, 6, true};
           a >>= 8;
           it8 = map8_[0].find(a);
-          if (it8 != map8_[0].end()) return {it8->second, 5, true};
+          if (it8 != map8_[0].end()) return {*it8, 5, true};
           a >>= 8;
         } else {
           a >>= 32;
         }
         auto it = map4_[1].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[1].end()) return {it->second, 4, true};
+        if (it != map4_[1].end()) return {*it, 4, true};
         a >>= 8;
         it = map4_[0].find(static_cast<std::uint32_t>(a));
-        if (it != map4_[0].end()) return {it->second, 3, true};
+        if (it != map4_[0].end()) return {*it, 3, true};
         a >>= 8;
         index = map2_[a];
         if (index != kFalse) return {index, 2, true};
@@ -1108,7 +1232,7 @@ class Vocab::FastDictionary {
     }
   }
 
-  LongestResult find1(Double ab, int l) const {
+  TM_ALWAYS_INLINE LongestResult find1(Double ab, int l) const {
     std::uint32_t index = 0;
     if (l > 1) {
       auto bit = ((((kFnvOffset ^ (kFibonacci * (ab[1] >> ((std::uint64_t(l) - 2) * 8)))) *
@@ -1144,7 +1268,7 @@ class Vocab::FastDictionary {
     for (;;) {
       auto it = map16_[l].find(ab);
       if (it != map16_[l].end()) {
-        index = it->second;
+        index = *it;
         return {index, 9 + l, true};
       }
       if (l == 0) return {0, 8, false};
@@ -1272,9 +1396,9 @@ class Vocab::FastDictionary {
   std::array<std::uint64_t, 262144> bloom32_{};
   std::array<std::uint64_t, 262144> bloom40_{};
   std::array<std::uint64_t, 262144> bloom_big_skip_{};
-  std::array<std::unordered_map<std::uint32_t, std::uint32_t>, 2> map4_{};
-  std::array<std::unordered_map<std::uint64_t, std::uint32_t>, 4> map8_{};
-  std::array<std::unordered_map<Double, std::uint32_t, DoubleHash>, 8> map16_{};
+  std::array<FibMap<std::uint32_t>, 2> map4_{};
+  std::array<FibMap<std::uint64_t>, 4> map8_{};
+  std::array<FibMap<Double>, 8> map16_{};
   std::array<std::uint32_t, 256> map1_{};
   std::array<std::uint32_t, 65536> map2_{};
 };
@@ -1308,7 +1432,8 @@ Vocab Vocab::load(const std::filesystem::path& path) {
   res.max_token_length_ = static_cast<int>(r.read_byte());
 
   res.info_.resize(static_cast<std::size_t>(n_info));
-  res.reverse_.resize(static_cast<std::size_t>(n_reverse));
+  // id -> bytes staging; flattened into reverse_blob_/reverse_off_ after load.
+  std::vector<Bytes> reverse_tmp(static_cast<std::size_t>(n_reverse));
   res.dictionary_ = std::make_unique<FastDictionary>();
   std::vector<int> lengths(static_cast<std::size_t>(n_info));
 
@@ -1317,7 +1442,6 @@ Vocab Vocab::load(const std::filesystem::path& path) {
     auto key = r.read_bytes8();
     lengths[static_cast<std::size_t>(i)] = static_cast<int>(key.size());
     if (key.size() > 40) throw Error("not a valid TokenMonster vocabulary");
-    token.token = key;
     res.dictionary_->add(key);
     token.alt.data.flag = r.read_byte();
     token.alt.data.n_words = r.read_byte();
@@ -1333,9 +1457,10 @@ Vocab Vocab::load(const std::filesystem::path& path) {
     }
     token.alt.id = r.read_uint24();
     token.score = r.read_float32();
-    if (token.alt.id >= res.reverse_.size()) throw Error("not a valid TokenMonster vocabulary");
-    res.info_[static_cast<std::size_t>(i)] = token;
-    res.reverse_[token.alt.id] = key;
+    if (token.alt.id >= reverse_tmp.size()) throw Error("not a valid TokenMonster vocabulary");
+    reverse_tmp[token.alt.id] = key;          // one copy (id-keyed, distinct from info order)
+    token.token = std::move(key);             // move bytes into the token
+    res.info_[static_cast<std::size_t>(i)] = std::move(token);
   }
 
   for (auto& b : res.begin_byte_) b = r.read_byte();
@@ -1348,6 +1473,23 @@ Vocab Vocab::load(const std::filesystem::path& path) {
     res.deleted_[static_cast<std::size_t>(i)].score = r.read_float32();
   }
   if (!r.eof()) throw Error("not a valid TokenMonster vocabulary");
+  // Flatten id -> bytes into a contiguous blob + offset table.
+  {
+    std::size_t total = 0;
+    for (const auto& t : reverse_tmp) total += t.size();
+    res.reverse_off_.resize(reverse_tmp.size() + 1);
+    // 16 trailing bytes so decode's fast path can copy fixed 8-byte words from
+    // any valid offset (up to two, for tokens <= 16 bytes) without over-reading.
+    res.reverse_blob_.resize(total + 16);
+    std::size_t off = 0;
+    for (std::size_t id = 0; id < reverse_tmp.size(); ++id) {
+      res.reverse_off_[id] = static_cast<std::uint32_t>(off);
+      std::copy(reverse_tmp[id].begin(), reverse_tmp[id].end(),
+                res.reverse_blob_.begin() + static_cast<std::ptrdiff_t>(off));
+      off += reverse_tmp[id].size();
+    }
+    res.reverse_off_[reverse_tmp.size()] = static_cast<std::uint32_t>(off);
+  }
   res.dictionary_->build();
   for (std::uint32_t i = 0; i < res.info_.size(); ++i) {
     auto [index, found] = res.dictionary_->find(res.info_[i].token);
@@ -1365,7 +1507,7 @@ std::vector<std::uint8_t> Vocab::normalize(std::span<const std::uint8_t> data) c
 std::vector<std::uint32_t> Vocab::deserialize(std::span<const std::uint8_t> data,
                                               std::uint8_t encoding_length) const {
   if (encoding_length == 0) {
-    encoding_length = reverse_.size() <= 65536 ? 2 : 3;
+    encoding_length = reverse_count() <= 65536 ? 2 : 3;
   }
   std::vector<std::uint32_t> tokens;
   if (encoding_length == 2) {
@@ -1401,19 +1543,33 @@ std::vector<std::uint32_t> Decoder::deserialize(std::span<const std::uint8_t> da
 }
 
 std::vector<std::uint8_t> Vocab::decode_raw(std::span<const std::uint32_t> tokens) const {
+  const std::size_t n = reverse_count();
+  const std::uint32_t* off = reverse_off_.data();
+  const std::uint8_t* blob = reverse_blob_.data();
   std::size_t size = 0;
   for (auto id : tokens) {
-    if (id < reverse_.size()) size += reverse_[id].size();
+    if (id < n) size += off[id + 1] - off[id];
   }
-  Bytes data(size);
+  Bytes data(size + 16);  // 16 bytes slack for the fixed-width fast-path stores
   std::size_t i = 0;
   for (auto id : tokens) {
-    if (id < reverse_.size()) {
-      std::copy(reverse_[id].begin(), reverse_[id].end(),
-                data.begin() + static_cast<std::ptrdiff_t>(i));
-      i += reverse_[id].size();
+    if (id < n) {
+      std::uint32_t o = off[id];
+      std::uint32_t len = off[id + 1] - o;
+      // Copy tokens (nearly all <= 16 bytes) with constant-size 8-byte words
+      // that inline to load/store pairs, avoiding a libc memcpy call per token.
+      if (len <= 8) {
+        std::memcpy(data.data() + i, blob + o, 8);
+      } else if (len <= 16) {
+        std::memcpy(data.data() + i, blob + o, 8);
+        std::memcpy(data.data() + i + len - 8, blob + o + len - 8, 8);
+      } else {
+        std::memcpy(data.data() + i, blob + o, len);
+      }
+      i += len;
     }
   }
+  data.resize(size);
   return data;
 }
 
@@ -1427,37 +1583,37 @@ std::vector<std::uint8_t> Vocab::decode(std::span<const std::uint32_t> tokens) c
 std::vector<std::uint8_t> Vocab::decode_serialized_raw(std::span<const std::uint8_t> data,
                                                        std::uint8_t encoding_length) const {
   if (encoding_length <= 1) {
-    encoding_length = reverse_.size() <= 65536 ? 2 : 3;
+    encoding_length = reverse_count() <= 65536 ? 2 : 3;
   }
   Bytes buffer;
   if (encoding_length == 2) {
-    if (reverse_.empty()) return {};
-    auto n_tokens = static_cast<std::uint16_t>(reverse_.size() - 1);
+    if (reverse_count() == 0) return {};
+    auto n_tokens = static_cast<std::uint16_t>(reverse_count() - 1);
     std::size_t size = 0;
     for (std::size_t i = 0; i + 1 < data.size(); i += 2) {
       auto v = static_cast<std::uint16_t>(data[i] | (data[i + 1] << 8));
-      if (v <= n_tokens) size += reverse_[v].size();
+      if (v <= n_tokens) size += reverse_at(v).size();
     }
     buffer.resize(size);
     size = 0;
     for (std::size_t i = 0; i + 1 < data.size(); i += 2) {
       auto v = static_cast<std::uint16_t>(data[i] | (data[i + 1] << 8));
       if (v <= n_tokens) {
-        std::copy(reverse_[v].begin(), reverse_[v].end(),
+        std::copy(reverse_at(v).begin(), reverse_at(v).end(),
                   buffer.begin() + static_cast<std::ptrdiff_t>(size));
-        size += reverse_[v].size();
+        size += reverse_at(v).size();
       }
     }
     return buffer;
   }
   if (encoding_length == 3) {
-    auto n_tokens = static_cast<std::uint32_t>(reverse_.size());
+    auto n_tokens = static_cast<std::uint32_t>(reverse_count());
     std::size_t size = 0;
     for (std::size_t i = 0; i + 2 < data.size(); i += 3) {
       auto v = static_cast<std::uint32_t>(data[i]) |
                (static_cast<std::uint32_t>(data[i + 1]) << 8) |
                (static_cast<std::uint32_t>(data[i + 2]) << 16);
-      if (v < n_tokens) size += reverse_[v].size();
+      if (v < n_tokens) size += reverse_at(v).size();
     }
     buffer.resize(size);
     size = 0;
@@ -1466,22 +1622,22 @@ std::vector<std::uint8_t> Vocab::decode_serialized_raw(std::span<const std::uint
                (static_cast<std::uint32_t>(data[i + 1]) << 8) |
                (static_cast<std::uint32_t>(data[i + 2]) << 16);
       if (v < n_tokens) {
-        std::copy(reverse_[v].begin(), reverse_[v].end(),
+        std::copy(reverse_at(v).begin(), reverse_at(v).end(),
                   buffer.begin() + static_cast<std::ptrdiff_t>(size));
-        size += reverse_[v].size();
+        size += reverse_at(v).size();
       }
     }
     return buffer;
   }
   if (encoding_length == 4) {
-    auto n_tokens = static_cast<std::uint32_t>(reverse_.size());
+    auto n_tokens = static_cast<std::uint32_t>(reverse_count());
     std::size_t size = 0;
     for (std::size_t i = 0; i + 3 < data.size(); i += 4) {
       auto v = static_cast<std::uint32_t>(data[i]) |
                (static_cast<std::uint32_t>(data[i + 1]) << 8) |
                (static_cast<std::uint32_t>(data[i + 2]) << 16) |
                (static_cast<std::uint32_t>(data[i + 3]) << 24);
-      if (v < n_tokens) size += reverse_[v].size();
+      if (v < n_tokens) size += reverse_at(v).size();
     }
     buffer.resize(size);
     size = 0;
@@ -1491,9 +1647,9 @@ std::vector<std::uint8_t> Vocab::decode_serialized_raw(std::span<const std::uint
                (static_cast<std::uint32_t>(data[i + 2]) << 16) |
                (static_cast<std::uint32_t>(data[i + 3]) << 24);
       if (v < n_tokens) {
-        std::copy(reverse_[v].begin(), reverse_[v].end(),
+        std::copy(reverse_at(v).begin(), reverse_at(v).end(),
                   buffer.begin() + static_cast<std::ptrdiff_t>(size));
-        size += reverse_[v].size();
+        size += reverse_at(v).size();
       }
     }
     return buffer;
@@ -1515,23 +1671,23 @@ std::vector<std::uint8_t> Decoder::decode(std::span<const std::uint32_t> tokens)
 
   std::size_t size = remainder_.size();
   for (auto id : tokens) {
-    if (id < vocab_->reverse_.size()) size += vocab_->reverse_[id].size();
+    if (id < vocab_->reverse_count()) size += vocab_->reverse_at(id).size();
   }
   Bytes data(size);
   std::copy(remainder_.begin(), remainder_.end(), data.begin());
   std::size_t i = remainder_.size();
   for (auto id : tokens) {
-    if (id < vocab_->reverse_.size()) {
-      std::copy(vocab_->reverse_[id].begin(), vocab_->reverse_[id].end(),
+    if (id < vocab_->reverse_count()) {
+      std::copy(vocab_->reverse_at(id).begin(), vocab_->reverse_at(id).end(),
                 data.begin() + static_cast<std::ptrdiff_t>(i));
-      i += vocab_->reverse_[id].size();
+      i += vocab_->reverse_at(id).size();
     }
   }
 
   int incomplete =
       vocab_->charset_ == 1 ? incomplete_utf8_bytes(data) : incomplete_utf16_bytes(data);
   std::size_t keep = data.size() - static_cast<std::size_t>(incomplete);
-  remainder_ = Bytes(data.begin() + static_cast<std::ptrdiff_t>(keep), data.end());
+  remainder_.assign(data.begin() + static_cast<std::ptrdiff_t>(keep), data.end());
   data.resize(keep);
 
   if (vocab_->using_capcode_ == 2) return capcode_decoder_.decode(data);
@@ -1543,30 +1699,29 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                                                      std::uint8_t encoding_length) {
   if (!vocab_) throw Error("decoder has no vocabulary");
   if (encoding_length <= 1) {
-    if (vocab_->reverse_.size() <= 65536) {
+    if (vocab_->reverse_count() <= 65536) {
       encoding_length = 2;
     } else {
       encoding_length = 3;
     }
   }
   if (encoding_length == 2) {
-    const auto& reverse = vocab_->reverse_;
-    if (reverse.empty()) return {};
-    auto n_tokens = static_cast<std::uint16_t>(reverse.size() - 1);
+    if (vocab_->reverse_count() == 0) return {};
+    auto n_tokens = static_cast<std::uint16_t>(vocab_->reverse_count() - 1);
     std::size_t i = 0;
     if (vocab_->charset_ == 0) {
       for (std::size_t on = 0; on + 1 < data.size(); on += 2) {
         auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
-        if (v <= n_tokens) i += reverse[v].size();
+        if (v <= n_tokens) i += vocab_->reverse_at(v).size();
       }
       Bytes buffer(i);
       i = 0;
       for (std::size_t on = 0; on + 1 < data.size(); on += 2) {
         auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
         if (v <= n_tokens) {
-          std::copy(reverse[v].begin(), reverse[v].end(),
+          std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
                     buffer.begin() + static_cast<std::ptrdiff_t>(i));
-          i += reverse[v].size();
+          i += vocab_->reverse_at(v).size();
         }
       }
       return buffer;
@@ -1574,7 +1729,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
     i = remainder_.size();
     for (std::size_t on = 0; on + 1 < data.size(); on += 2) {
       auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
-      if (v <= n_tokens) i += reverse[v].size();
+      if (v <= n_tokens) i += vocab_->reverse_at(v).size();
     }
     Bytes buffer(i);
     std::copy(remainder_.begin(), remainder_.end(), buffer.begin());
@@ -1582,16 +1737,16 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
     for (std::size_t on = 0; on + 1 < data.size(); on += 2) {
       auto v = static_cast<std::uint16_t>(data[on] | (data[on + 1] << 8));
       if (v <= n_tokens) {
-        std::copy(reverse[v].begin(), reverse[v].end(),
+        std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
                   buffer.begin() + static_cast<std::ptrdiff_t>(i));
-        i += reverse[v].size();
+        i += vocab_->reverse_at(v).size();
       }
     }
     std::size_t remaining = buffer.size() - static_cast<std::size_t>(
                                                 vocab_->charset_ == 1
                                                     ? incomplete_utf8_bytes(buffer)
                                                     : incomplete_utf16_bytes(buffer));
-    remainder_ = Bytes(buffer.begin() + static_cast<std::ptrdiff_t>(remaining), buffer.end());
+    remainder_.assign(buffer.begin() + static_cast<std::ptrdiff_t>(remaining), buffer.end());
     buffer.resize(remaining);
     if (vocab_->using_capcode_ == 2) return capcode_decoder_.decode(buffer);
     if (vocab_->using_capcode_ == 1) return capcode_decoder_.no_capcode_decode(buffer);
@@ -1599,15 +1754,14 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
   } else if (encoding_length == 3) {
     std::size_t on = 0;
     std::uint32_t v = 0;
-    const auto& reverse = vocab_->reverse_;
-    auto n_tokens = static_cast<std::uint32_t>(reverse.size());
+    auto n_tokens = static_cast<std::uint32_t>(vocab_->reverse_count());
     std::size_t i = 0;
     if (vocab_->charset_ == 0) {
       for (on = 0; on + 2 < data.size(); on += 3) {
         v = static_cast<std::uint32_t>(data[on]) |
             (static_cast<std::uint32_t>(data[on + 1]) << 8) |
             (static_cast<std::uint32_t>(data[on + 2]) << 16);
-        if (v < n_tokens) i += reverse[v].size();
+        if (v < n_tokens) i += vocab_->reverse_at(v).size();
       }
       Bytes buffer(i);
       i = 0;
@@ -1616,9 +1770,9 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
             (static_cast<std::uint32_t>(data[on + 1]) << 8) |
             (static_cast<std::uint32_t>(data[on + 2]) << 16);
         if (v < n_tokens) {
-          std::copy(reverse[v].begin(), reverse[v].end(),
+          std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
                     buffer.begin() + static_cast<std::ptrdiff_t>(i));
-          i += reverse[v].size();
+          i += vocab_->reverse_at(v).size();
         }
       }
       return buffer;
@@ -1628,7 +1782,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
       v = static_cast<std::uint32_t>(data[on]) |
           (static_cast<std::uint32_t>(data[on + 1]) << 8) |
           (static_cast<std::uint32_t>(data[on + 2]) << 16);
-      if (v < n_tokens) i += reverse[v].size();
+      if (v < n_tokens) i += vocab_->reverse_at(v).size();
     }
     Bytes buffer(i);
     std::copy(remainder_.begin(), remainder_.end(), buffer.begin());
@@ -1638,23 +1792,22 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
           (static_cast<std::uint32_t>(data[on + 1]) << 8) |
           (static_cast<std::uint32_t>(data[on + 2]) << 16);
       if (v < n_tokens) {
-        std::copy(reverse[v].begin(), reverse[v].end(),
+        std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
                   buffer.begin() + static_cast<std::ptrdiff_t>(i));
-        i += reverse[v].size();
+        i += vocab_->reverse_at(v).size();
       }
     }
     std::size_t remaining = buffer.size() - static_cast<std::size_t>(
                                                 vocab_->charset_ == 1
                                                     ? incomplete_utf8_bytes(buffer)
                                                     : incomplete_utf16_bytes(buffer));
-    remainder_ = Bytes(buffer.begin() + static_cast<std::ptrdiff_t>(remaining), buffer.end());
+    remainder_.assign(buffer.begin() + static_cast<std::ptrdiff_t>(remaining), buffer.end());
     buffer.resize(remaining);
     if (vocab_->using_capcode_ == 2) return capcode_decoder_.decode(buffer);
     if (vocab_->using_capcode_ == 1) return capcode_decoder_.no_capcode_decode(buffer);
     return buffer;
   } else if (encoding_length == 4) {
-    const auto& reverse = vocab_->reverse_;
-    auto n_tokens = static_cast<std::uint32_t>(reverse.size());
+    auto n_tokens = static_cast<std::uint32_t>(vocab_->reverse_count());
     std::size_t i = 0;
     if (vocab_->charset_ == 0) {
       for (std::size_t on = 0; on + 3 < data.size(); on += 4) {
@@ -1662,7 +1815,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                  (static_cast<std::uint32_t>(data[on + 1]) << 8) |
                  (static_cast<std::uint32_t>(data[on + 2]) << 16) |
                  (static_cast<std::uint32_t>(data[on + 3]) << 24);
-        if (v < n_tokens) i += reverse[v].size();
+        if (v < n_tokens) i += vocab_->reverse_at(v).size();
       }
       Bytes buffer(i);
       i = 0;
@@ -1672,9 +1825,9 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                  (static_cast<std::uint32_t>(data[on + 2]) << 16) |
                  (static_cast<std::uint32_t>(data[on + 3]) << 24);
         if (v < n_tokens) {
-          std::copy(reverse[v].begin(), reverse[v].end(),
+          std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
                     buffer.begin() + static_cast<std::ptrdiff_t>(i));
-          i += reverse[v].size();
+          i += vocab_->reverse_at(v).size();
         }
       }
       return buffer;
@@ -1685,7 +1838,7 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                (static_cast<std::uint32_t>(data[on + 1]) << 8) |
                (static_cast<std::uint32_t>(data[on + 2]) << 16) |
                (static_cast<std::uint32_t>(data[on + 3]) << 24);
-      if (v < n_tokens) i += reverse[v].size();
+      if (v < n_tokens) i += vocab_->reverse_at(v).size();
     }
     Bytes buffer(i);
     std::copy(remainder_.begin(), remainder_.end(), buffer.begin());
@@ -1696,16 +1849,16 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
                (static_cast<std::uint32_t>(data[on + 2]) << 16) |
                (static_cast<std::uint32_t>(data[on + 3]) << 24);
       if (v < n_tokens) {
-        std::copy(reverse[v].begin(), reverse[v].end(),
+        std::copy(vocab_->reverse_at(v).begin(), vocab_->reverse_at(v).end(),
                   buffer.begin() + static_cast<std::ptrdiff_t>(i));
-        i += reverse[v].size();
+        i += vocab_->reverse_at(v).size();
       }
     }
     std::size_t remaining = buffer.size() - static_cast<std::size_t>(
                                                 vocab_->charset_ == 1
                                                     ? incomplete_utf8_bytes(buffer)
                                                     : incomplete_utf16_bytes(buffer));
-    remainder_ = Bytes(buffer.begin() + static_cast<std::ptrdiff_t>(remaining), buffer.end());
+    remainder_.assign(buffer.begin() + static_cast<std::ptrdiff_t>(remaining), buffer.end());
     buffer.resize(remaining);
     if (vocab_->using_capcode_ == 2) return capcode_decoder_.decode(buffer);
     if (vocab_->using_capcode_ == 1) return capcode_decoder_.no_capcode_decode(buffer);
@@ -1715,13 +1868,12 @@ std::vector<std::uint8_t> Decoder::decode_serialized(std::span<const std::uint8_
 }
 
 std::vector<std::uint8_t> Decoder::flush() {
-  auto out = remainder_;
+  auto out = std::move(remainder_);
   remainder_.clear();
   return out;
 }
 
-TokenizeResult Vocab::tokenize_normalized(std::span<const std::uint8_t> normalized) const {
-  Bytes data(normalized.begin(), normalized.end());
+TokenizeResult Vocab::tokenize_normalized(Bytes data) const {
   const int len_data = static_cast<int>(data.size());
   data.push_back(0);
 
@@ -1739,11 +1891,15 @@ TokenizeResult Vocab::tokenize_normalized(std::span<const std::uint8_t> normaliz
   TokenOuter original;
   TokenInner first, second;
   std::vector<std::uint32_t> tokens;
-  tokens.reserve(static_cast<std::size_t>((len_data / 4) + 4));
+  // Real corpora tokenize at ~0.34-0.49 tokens/byte; reserving len/2 avoids a
+  // mid-tokenization growth realloc of the (large) output buffer.
+  tokens.reserve(static_cast<std::size_t>((len_data / 2) + 4));
   int missing = 0;
 
-  Bytes lilbuf(static_cast<std::size_t>(max_token_length_), 0);
-  if (!lilbuf.empty()) lilbuf[0] = 32;
+  // Scratch buffer for the delete-token lookahead. max_token_length_ <= 40 is
+  // enforced at load, so keep it on the stack instead of a per-call heap alloc.
+  std::array<std::uint8_t, 40> lilbuf{};
+  lilbuf[0] = 32;
   int lilbuf_offset = charset_ == 2 ? 2 : 1;
   int max_token_length_with_space = max_token_length_ - lilbuf_offset;
 
@@ -1787,7 +1943,6 @@ TokenizeResult Vocab::tokenize_normalized(std::span<const std::uint8_t> normaliz
           if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
               second.n_words == 0) {
             length1b = min_int(len_data - i1, max_token_length_with_space);
-            std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
             std::copy_n(data.begin() + i1, length1b, lilbuf.begin() + lilbuf_offset);
             auto l1b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                 lilbuf.data(), static_cast<std::size_t>(length1b + lilbuf_offset)));
@@ -1839,7 +1994,6 @@ TokenizeResult Vocab::tokenize_normalized(std::span<const std::uint8_t> normaliz
             if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                 second.n_words == 0) {
               length2b = min_int(len_data - i2, max_token_length_with_space);
-              std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
               std::copy_n(data.begin() + i2, length2b, lilbuf.begin() + lilbuf_offset);
               auto l2b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                   lilbuf.data(), static_cast<std::size_t>(length2b + lilbuf_offset)));
@@ -1895,7 +2049,6 @@ TokenizeResult Vocab::tokenize_normalized(std::span<const std::uint8_t> normaliz
               if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                   second.n_words == 0) {
                 length3b = min_int(len_data - i3, max_token_length_with_space);
-                std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
                 std::copy_n(data.begin() + i3, length3b, lilbuf.begin() + lilbuf_offset);
                 auto l3b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                     lilbuf.data(), static_cast<std::size_t>(length3b + lilbuf_offset)));
@@ -1991,8 +2144,7 @@ TokenizeResult Vocab::tokenize_normalized(std::span<const std::uint8_t> normaliz
 }
 
 
-CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> normalized) const {
-  Bytes data(normalized.begin(), normalized.end());
+CountResult Vocab::tokenize_count_normalized(Bytes data) const {
   const int len_data = static_cast<int>(data.size());
   data.push_back(0);
 
@@ -2012,8 +2164,8 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
   int tokens = 0;
   int missing = 0;
 
-  Bytes lilbuf(static_cast<std::size_t>(max_token_length_), 0);
-  if (!lilbuf.empty()) lilbuf[0] = 32;
+  std::array<std::uint8_t, 40> lilbuf{};
+  lilbuf[0] = 32;
   int lilbuf_offset = charset_ == 2 ? 2 : 1;
   int max_token_length_with_space = max_token_length_ - lilbuf_offset;
 
@@ -2057,7 +2209,6 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
           if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
               second.n_words == 0) {
             length1b = min_int(len_data - i1, max_token_length_with_space);
-            std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
             std::copy_n(data.begin() + i1, length1b, lilbuf.begin() + lilbuf_offset);
             auto l1b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                 lilbuf.data(), static_cast<std::size_t>(length1b + lilbuf_offset)));
@@ -2109,7 +2260,6 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
             if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                 second.n_words == 0) {
               length2b = min_int(len_data - i2, max_token_length_with_space);
-              std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
               std::copy_n(data.begin() + i2, length2b, lilbuf.begin() + lilbuf_offset);
               auto l2b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                   lilbuf.data(), static_cast<std::size_t>(length2b + lilbuf_offset)));
@@ -2165,7 +2315,6 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
               if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                   second.n_words == 0) {
                 length3b = min_int(len_data - i3, max_token_length_with_space);
-                std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
                 std::copy_n(data.begin() + i3, length3b, lilbuf.begin() + lilbuf_offset);
                 auto l3b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                     lilbuf.data(), static_cast<std::size_t>(length3b + lilbuf_offset)));
@@ -2219,7 +2368,7 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
             goto checkpoint;
           }
           if (max_score == score1b) {
-            tokens++;
+            tokens += 2;  // token + injected delete_token_
             i += length;
             length = length1b;
             index = index1b;
@@ -2227,7 +2376,7 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
             goto checkpoint;
           }
           if (max_score == score2b) {
-            tokens++;
+            tokens += 2;  // token + injected delete_token_
             i += original.length - forward_delete;
             length = length2b;
             index = index2b;
@@ -2235,7 +2384,7 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
             goto checkpoint;
           }
           if (max_score == score3b) {
-            tokens++;
+            tokens += 2;  // token + injected delete_token_
             i += original.length2 - forward_delete;
             length = length3b;
             index = index3b;
@@ -2259,8 +2408,7 @@ CountResult Vocab::tokenize_count_normalized(std::span<const std::uint8_t> norma
 
 
 std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
-    std::span<const std::uint8_t> normalized) const {
-  Bytes data(normalized.begin(), normalized.end());
+    Bytes data) const {
   const int len_data = static_cast<int>(data.size());
   data.push_back(0);
 
@@ -2277,13 +2425,14 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
   std::uint8_t next_byte = 0;
   TokenOuter original;
   TokenInner first, second;
-  length = (len_data / 2) + 4;
+  // enc=2: 2 bytes/token, ~0.34-0.49 tokens/byte -> up to ~len_data bytes.
+  length = len_data + 4;
   Bytes buffer;
   buffer.reserve(static_cast<std::size_t>(length));
   int missing = 0;
 
-  Bytes lilbuf(static_cast<std::size_t>(max_token_length_), 0);
-  if (!lilbuf.empty()) lilbuf[0] = 32;
+  std::array<std::uint8_t, 40> lilbuf{};
+  lilbuf[0] = 32;
   int lilbuf_offset = charset_ == 2 ? 2 : 1;
   int max_token_length_with_space = max_token_length_ - lilbuf_offset;
 
@@ -2327,7 +2476,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
           if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
               second.n_words == 0) {
             length1b = min_int(len_data - i1, max_token_length_with_space);
-            std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
             std::copy_n(data.begin() + i1, length1b, lilbuf.begin() + lilbuf_offset);
             auto l1b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                 lilbuf.data(), static_cast<std::size_t>(length1b + lilbuf_offset)));
@@ -2379,7 +2527,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
             if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                 second.n_words == 0) {
               length2b = min_int(len_data - i2, max_token_length_with_space);
-              std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
               std::copy_n(data.begin() + i2, length2b, lilbuf.begin() + lilbuf_offset);
               auto l2b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                   lilbuf.data(), static_cast<std::size_t>(length2b + lilbuf_offset)));
@@ -2435,7 +2582,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
               if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                   second.n_words == 0) {
                 length3b = min_int(len_data - i3, max_token_length_with_space);
-                std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
                 std::copy_n(data.begin() + i3, length3b, lilbuf.begin() + lilbuf_offset);
                 auto l3b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                     lilbuf.data(), static_cast<std::size_t>(length3b + lilbuf_offset)));
@@ -2545,8 +2691,7 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized16(
 
 
 std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
-    std::span<const std::uint8_t> normalized) const {
-  Bytes data(normalized.begin(), normalized.end());
+    Bytes data) const {
   const int len_data = static_cast<int>(data.size());
   data.push_back(0);
 
@@ -2563,13 +2708,14 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
   std::uint8_t next_byte = 0;
   TokenOuter original;
   TokenInner first, second;
-  length = (len_data / 2) + 6;
+  // enc=3: 3 bytes/token -> up to ~1.5*len_data bytes.
+  length = len_data + (len_data / 2) + 6;
   Bytes buffer;
   buffer.reserve(static_cast<std::size_t>(length));
   int missing = 0;
 
-  Bytes lilbuf(static_cast<std::size_t>(max_token_length_), 0);
-  if (!lilbuf.empty()) lilbuf[0] = 32;
+  std::array<std::uint8_t, 40> lilbuf{};
+  lilbuf[0] = 32;
   int lilbuf_offset = charset_ == 2 ? 2 : 1;
   int max_token_length_with_space = max_token_length_ - lilbuf_offset;
 
@@ -2613,7 +2759,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
           if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
               second.n_words == 0) {
             length1b = min_int(len_data - i1, max_token_length_with_space);
-            std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
             std::copy_n(data.begin() + i1, length1b, lilbuf.begin() + lilbuf_offset);
             auto l1b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                 lilbuf.data(), static_cast<std::size_t>(length1b + lilbuf_offset)));
@@ -2665,7 +2810,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
             if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                 second.n_words == 0) {
               length2b = min_int(len_data - i2, max_token_length_with_space);
-              std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
               std::copy_n(data.begin() + i2, length2b, lilbuf.begin() + lilbuf_offset);
               auto l2b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                   lilbuf.data(), static_cast<std::size_t>(length2b + lilbuf_offset)));
@@ -2721,7 +2865,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
               if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                   second.n_words == 0) {
                 length3b = min_int(len_data - i3, max_token_length_with_space);
-                std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
                 std::copy_n(data.begin() + i3, length3b, lilbuf.begin() + lilbuf_offset);
                 auto l3b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                     lilbuf.data(), static_cast<std::size_t>(length3b + lilbuf_offset)));
@@ -2842,8 +2985,7 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized24(
 
 
 std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
-    std::span<const std::uint8_t> normalized) const {
-  Bytes data(normalized.begin(), normalized.end());
+    Bytes data) const {
   const int len_data = static_cast<int>(data.size());
   data.push_back(0);
 
@@ -2860,13 +3002,14 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
   std::uint8_t next_byte = 0;
   TokenOuter original;
   TokenInner first, second;
-  length = len_data + 8;
+  // enc=4: 4 bytes/token -> up to ~2*len_data bytes.
+  length = (len_data * 2) + 8;
   Bytes buffer;
   buffer.reserve(static_cast<std::size_t>(length));
   int missing = 0;
 
-  Bytes lilbuf(static_cast<std::size_t>(max_token_length_), 0);
-  if (!lilbuf.empty()) lilbuf[0] = 32;
+  std::array<std::uint8_t, 40> lilbuf{};
+  lilbuf[0] = 32;
   int lilbuf_offset = charset_ == 2 ? 2 : 1;
   int max_token_length_with_space = max_token_length_ - lilbuf_offset;
 
@@ -2910,7 +3053,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
           if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
               second.n_words == 0) {
             length1b = min_int(len_data - i1, max_token_length_with_space);
-            std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
             std::copy_n(data.begin() + i1, length1b, lilbuf.begin() + lilbuf_offset);
             auto l1b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                 lilbuf.data(), static_cast<std::size_t>(length1b + lilbuf_offset)));
@@ -2962,7 +3104,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
             if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                 second.n_words == 0) {
               length2b = min_int(len_data - i2, max_token_length_with_space);
-              std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
               std::copy_n(data.begin() + i2, length2b, lilbuf.begin() + lilbuf_offset);
               auto l2b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                   lilbuf.data(), static_cast<std::size_t>(length2b + lilbuf_offset)));
@@ -3018,7 +3159,6 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
               if (delete_token_ != does_not_exist && (second.flag & 2) != 0 && next_byte == 1 &&
                   second.n_words == 0) {
                 length3b = min_int(len_data - i3, max_token_length_with_space);
-                std::fill(lilbuf.begin() + lilbuf_offset, lilbuf.end(), 0);
                 std::copy_n(data.begin() + i3, length3b, lilbuf.begin() + lilbuf_offset);
                 auto l3b = dictionary_->longest_substring(std::span<const std::uint8_t>(
                     lilbuf.data(), static_cast<std::size_t>(length3b + lilbuf_offset)));
@@ -3152,35 +3292,117 @@ std::pair<std::vector<std::uint8_t>, int> Vocab::tokenize_to_serialized32(
 TokenizeResult Vocab::tokenize(std::span<const std::uint8_t> data) const {
   if (max_token_length_ == 0) return {};
   auto normalized = normalize(data);
-  return tokenize_normalized(normalized);
+  return tokenize_normalized(std::move(normalized));
 }
 
 CountResult Vocab::count(std::span<const std::uint8_t> data) const {
   if (max_token_length_ == 0) return {};
   auto normalized = normalize(data);
-  return tokenize_count_normalized(normalized);
+  return tokenize_count_normalized(std::move(normalized));
 }
 
 SerializedResult Vocab::tokenize_serialized(std::span<const std::uint8_t> data,
                                             std::uint8_t encoding_length) const {
   if (max_token_length_ == 0) return {{}, 2, 0};
   if (encoding_length <= 1) {
-    encoding_length = reverse_.size() <= 65536 ? 2 : 3;
+    encoding_length = reverse_count() <= 65536 ? 2 : 3;
   }
   auto normalized = normalize(data);
   if (encoding_length == 2) {
-    auto [bytes, missing] = tokenize_to_serialized16(normalized);
+    auto [bytes, missing] = tokenize_to_serialized16(std::move(normalized));
     return {std::move(bytes), 2, missing};
   }
   if (encoding_length == 3) {
-    auto [bytes, missing] = tokenize_to_serialized24(normalized);
+    auto [bytes, missing] = tokenize_to_serialized24(std::move(normalized));
     return {std::move(bytes), 3, missing};
   }
   if (encoding_length == 4) {
-    auto [bytes, missing] = tokenize_to_serialized32(normalized);
+    auto [bytes, missing] = tokenize_to_serialized32(std::move(normalized));
     return {std::move(bytes), 4, missing};
   }
   throw Error("invalid encoding length");
+}
+
+template <class Emit>
+int Vocab::tokenize_greedy_normalized(std::span<const std::uint8_t> normalized,
+                                      Emit&& emit) const {
+  const int len_data = static_cast<int>(normalized.size());
+  int i = 0;
+  int missing = 0;
+  while (i < len_data) {
+    auto longest = dictionary_->longest_substring(normalized.subspan(
+        static_cast<std::size_t>(i),
+        static_cast<std::size_t>(min_int(len_data - i, max_token_length_))));
+    if (longest.found) {
+      emit(info_[longest.index].alt.id);
+      i += longest.length;
+    } else {
+      if (unk_token_ != does_not_exist) emit(unk_token_);
+      ++i;
+      ++missing;
+    }
+  }
+  return missing;
+}
+
+TokenizeResult Vocab::tokenize_greedy(std::span<const std::uint8_t> data) const {
+  if (max_token_length_ == 0) return {};
+  auto normalized = normalize(data);
+  std::vector<std::uint32_t> tokens;
+  tokens.reserve(static_cast<std::size_t>((normalized.size() / 4) + 4));
+  int missing = tokenize_greedy_normalized(
+      normalized, [&tokens](std::uint32_t id) { tokens.push_back(id); });
+  return {std::move(tokens), missing};
+}
+
+CountResult Vocab::count_greedy(std::span<const std::uint8_t> data) const {
+  if (max_token_length_ == 0) return {};
+  auto normalized = normalize(data);
+  int tokens = 0;
+  int missing =
+      tokenize_greedy_normalized(normalized, [&tokens](std::uint32_t) { ++tokens; });
+  return {tokens, missing};
+}
+
+SerializedResult Vocab::tokenize_serialized_greedy(std::span<const std::uint8_t> data,
+                                                   std::uint8_t encoding_length) const {
+  if (max_token_length_ == 0) return {{}, 2, 0};
+  if (encoding_length <= 1) {
+    encoding_length = reverse_count() <= 65536 ? 2 : 3;
+  }
+  auto normalized = normalize(data);
+  const int len_data = static_cast<int>(normalized.size());
+  Bytes buffer;
+  int missing = 0;
+  switch (encoding_length) {
+    case 2:
+      buffer.reserve(static_cast<std::size_t>((len_data / 2) + 4));
+      missing = tokenize_greedy_normalized(normalized, [&buffer](std::uint32_t id) {
+        buffer.push_back(static_cast<std::uint8_t>(id));
+        buffer.push_back(static_cast<std::uint8_t>(id >> 8));
+      });
+      break;
+    case 3:
+      buffer.reserve(static_cast<std::size_t>((len_data / 2) + 6));
+      missing = tokenize_greedy_normalized(normalized, [&buffer](std::uint32_t id) {
+        buffer.push_back(static_cast<std::uint8_t>(id));
+        buffer.push_back(static_cast<std::uint8_t>(id >> 8));
+        buffer.push_back(static_cast<std::uint8_t>(id >> 16));
+      });
+      break;
+    case 4:
+      buffer.reserve(static_cast<std::size_t>(len_data + 8));
+      missing = tokenize_greedy_normalized(normalized, [&buffer](std::uint32_t id) {
+        buffer.push_back(static_cast<std::uint8_t>(id));
+        buffer.push_back(static_cast<std::uint8_t>(id >> 8));
+        buffer.push_back(static_cast<std::uint8_t>(id >> 16));
+        buffer.push_back(0);
+      });
+      break;
+    default:
+      throw Error("invalid encoding length");
+  }
+  return {std::move(buffer), encoding_length, missing};
 }
 
 std::vector<Info> Vocab::tokens_detailed() const {
@@ -3235,8 +3457,9 @@ std::vector<std::vector<std::uint8_t>> Vocab::tokens() const {
 }
 
 std::optional<std::vector<std::uint8_t>> Vocab::id_to_token(std::uint32_t id) const {
-  if (id >= reverse_.size()) return std::nullopt;
-  return reverse_[id];
+  if (id >= reverse_count()) return std::nullopt;
+  auto s = reverse_at(id);
+  return std::vector<std::uint8_t>(s.begin(), s.end());
 }
 
 std::optional<std::uint32_t> Vocab::token_to_id(std::span<const std::uint8_t> token) const {
@@ -3252,6 +3475,6 @@ std::vector<std::uint8_t> Vocab::denormalize(std::span<const std::uint8_t> token
   return data;
 }
 
-int Vocab::highest_token_id() const { return static_cast<int>(reverse_.size()) - 1; }
+int Vocab::highest_token_id() const { return static_cast<int>(reverse_count()) - 1; }
 
 }  // namespace tokenmonster

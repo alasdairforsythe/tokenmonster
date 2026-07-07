@@ -86,6 +86,11 @@ class Vocab {
   SerializedResult tokenize_serialized(std::span<const std::uint8_t> data,
                                        std::uint8_t encoding_length = 0) const;
 
+  TokenizeResult tokenize_greedy(std::span<const std::uint8_t> data) const;
+  CountResult count_greedy(std::span<const std::uint8_t> data) const;
+  SerializedResult tokenize_serialized_greedy(std::span<const std::uint8_t> data,
+                                              std::uint8_t encoding_length = 0) const;
+
   std::vector<std::uint8_t> decode(std::span<const std::uint32_t> tokens) const;
   std::vector<std::uint8_t> decode_serialized(std::span<const std::uint8_t> data,
                                               std::uint8_t encoding_length = 0) const;
@@ -144,21 +149,36 @@ class Vocab {
 
   class FastDictionary;
 
-  TokenizeResult tokenize_normalized(std::span<const std::uint8_t> normalized) const;
-  CountResult tokenize_count_normalized(std::span<const std::uint8_t> normalized) const;
+  TokenizeResult tokenize_normalized(std::vector<std::uint8_t> normalized) const;
+  CountResult tokenize_count_normalized(std::vector<std::uint8_t> normalized) const;
+  template <class Emit>
+  int tokenize_greedy_normalized(std::span<const std::uint8_t> normalized, Emit&& emit) const;
   std::pair<std::vector<std::uint8_t>, int> tokenize_to_serialized16(
-      std::span<const std::uint8_t> normalized) const;
+      std::vector<std::uint8_t> normalized) const;
   std::pair<std::vector<std::uint8_t>, int> tokenize_to_serialized24(
-      std::span<const std::uint8_t> normalized) const;
+      std::vector<std::uint8_t> normalized) const;
   std::pair<std::vector<std::uint8_t>, int> tokenize_to_serialized32(
-      std::span<const std::uint8_t> normalized) const;
+      std::vector<std::uint8_t> normalized) const;
   std::vector<std::uint8_t> decode_raw(std::span<const std::uint32_t> tokens) const;
   std::vector<std::uint8_t> decode_serialized_raw(std::span<const std::uint8_t> data,
                                                   std::uint8_t encoding_length) const;
 
+  // Reverse (id -> token bytes) stored flat: all token bytes concatenated in
+  // reverse_blob_, with reverse_off_[id]..reverse_off_[id+1] delimiting token
+  // id. This replaces a vector-of-vectors so detokenization reads one
+  // contiguous offset array + blob instead of chasing a heap vector per token.
+  std::size_t reverse_count() const {
+    return reverse_off_.empty() ? 0 : reverse_off_.size() - 1;
+  }
+  std::span<const std::uint8_t> reverse_at(std::uint32_t id) const {
+    return {reverse_blob_.data() + reverse_off_[id],
+            reverse_off_[id + 1] - reverse_off_[id]};
+  }
+
   std::unique_ptr<FastDictionary> dictionary_;
   std::vector<TokenInfo> info_;
-  std::vector<std::vector<std::uint8_t>> reverse_;
+  std::vector<std::uint8_t> reverse_blob_;
+  std::vector<std::uint32_t> reverse_off_;
   std::vector<DeletedToken> deleted_;
   std::uint8_t begin_byte_[256]{};
   int vocab_size_ = 0;
