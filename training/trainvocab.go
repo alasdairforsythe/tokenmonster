@@ -160,6 +160,12 @@ func String(b []byte) string {
 	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
+func containsSpecialTokenPart(token []byte, special []byte) bool {
+	// Regular tokens cannot contain a full special token or either side with one byte removed.
+	// The trimmed checks block tokens that would consume all but one byte of a special token.
+	return bytes.Contains(token, special) || bytes.Contains(token, special[1:]) || bytes.Contains(token, special[:len(special)-1])
+}
+
 func hasSuffixPos(key []byte) int {
 	for _, suffix := range ungreedySuffixesB {
 		if bytes.HasSuffix(key, suffix) {
@@ -1738,12 +1744,12 @@ func main() {
 	for _, special := range specialTokens {
 		specialMap[String(special)] = true
 		for idx, tok := range tokens {
-			if bytes.Contains(tok, special) {
+			if containsSpecialTokenPart(tok, special) {
 				tokens[idx] = nil
 			}
 		}
 		for idx, tok := range doubletokens {
-			if bytes.Contains(tok, special) {
+			if containsSpecialTokenPart(tok, special) {
 				doubletokens[idx] = nil
 			}
 		}
@@ -1772,7 +1778,7 @@ func main() {
 						}
 					}
 				}
-				if len(tok) > 1 {
+				if len(tok) > 1 && len(tok) <= 40 {
 					uniqueTokens.Add(tok, 1)
 				}
 			}
@@ -1782,7 +1788,7 @@ func main() {
 	}
 	i2 = 0
 	for _, tok := range doubletokens {
-		if len(tok) <= 1 {
+		if len(tok) <= 1 || len(tok) > 40 {
 			continue
 		}
 		doubletokens[i2] = tok
